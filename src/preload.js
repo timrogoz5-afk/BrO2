@@ -1,0 +1,23 @@
+const { contextBridge, ipcRenderer } = require('electron');
+
+contextBridge.exposeInMainWorld('bro2', {
+  send: (action, value) => ipcRenderer.send('browser:action', action, value),
+  onState: (callback) => ipcRenderer.on('browser:state', (_event, state) => callback(state)),
+  onFocus: (callback) => ipcRenderer.on('browser:focus', () => callback()),
+  onCustomizeHome: (callback) => ipcRenderer.on('browser:customize-home', () => callback()),
+  home: (action, value) => ipcRenderer.invoke('browser:home', action, value),
+  passwordPanel: (action, value) => ipcRenderer.send('password:panel', action, value),
+  onPasswordExpanded: (callback) => ipcRenderer.on('password:expanded', (_event, expanded) => callback(expanded)),
+  passwordSettings: (action, value) => ipcRenderer.invoke('password:settings', action, value),
+  editBookmarks: (action, value) => ipcRenderer.invoke('browser:bookmarks', action, value),
+  startupPages: (home, pages) => ipcRenderer.invoke('browser:startup-pages', home, pages),
+  localProfiles: (action, value) => ipcRenderer.invoke('browser:local-profiles', action, value),
+  searchEngine: (action, value) => ipcRenderer.invoke('browser:search-engine', action, value),
+  translationSettings: (value) => ipcRenderer.invoke('browser:translation-settings', value),
+  extensions: (action, id, page) => ipcRenderer.invoke('browser:extensions', action, id, page),
+  onZoom: (callback) => ipcRenderer.on('browser:zoom', (_event, level) => callback(level)),
+  onMenuState: (callback) => ipcRenderer.on('browser:menu-state', (_event, open) => callback(open)),
+  onDownloads: (callback) => ipcRenderer.on('browser:downloads', (_event, items) => callback(items)),
+  onTasks: (callback) => ipcRenderer.on('browser:tasks', (_event, items) => callback(items)),
+  onNotice: (callback) => ipcRenderer.on('browser:notice', (_event, message) => callback(message)),
+});

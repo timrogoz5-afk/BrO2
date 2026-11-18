@@ -1,0 +1,300 @@
+[
+  {
+    "n": 1,
+    "kind": "cold",
+    "shellMs": 431.4781,
+    "startupPaintMs": 836.629,
+    "first": {
+      "fcp": 412,
+      "ttfb": 38.70000000298023
+    },
+    "pagesReady": 1,
+    "memory": {
+      "workingSet": 524296192,
+      "processes": 6,
+      "privateBytes": 272162816
+    },
+    "switches": [],
+    "navs": [
+      {
+        "fcp": 32,
+        "ttfb": 5.800000011920929,
+        "serverMs": 0.0035000000002582965
+      },
+      {
+        "fcp": 164,
+        "ttfb": 133.90000000596046,
+        "serverMs": 129.03510000000006
+      }
+    ]
+  },
+  {
+    "n": 1,
+    "kind": "warm",
+    "shellMs": 504.20679999999993,
+    "startupPaintMs": 778.9856,
+    "first": {
+      "fcp": 292,
+      "ttfb": 18.899999991059303
+    },
+    "pagesReady": 1,
+    "memory": {
+      "workingSet": 522825728,
+      "processes": 6,
+      "privateBytes": 272252928
+    },
+    "switches": [],
+    "navs": [
+      {
+        "fcp": 36,
+        "ttfb": 5.5,
+        "serverMs": 0.004500000000007276
+      },
+      {
+        "fcp": 164,
+        "ttfb": 134.8999999910593,
+        "serverMs": 130.32660000000033
+      }
+    ]
+  },
+  {
+    "n": 10,
+    "kind": "cold",
+    "shellMs": 479.40949999999975,
+    "startupPaintMs": 857.3144000000002,
+    "first": {
+      "fcp": 408,
+      "ttfb": 40.400000005960464
+    },
+    "pagesReady": 1,
+    "memory": {
+      "workingSet": 528887808,
+      "processes": 6,
+      "privateBytes": 284160000
+    },
+    "switches": [
+      {
+        "selection": 33.1859000000004,
+        "ready": 387.72990000000027,
+        "navigationFcp": 368
+      },
+      {
+        "selection": 11.05450000000019,
+        "ready": 16.082800000000134,
+        "navigationFcp": 408
+      },
+      {
+        "selection": 14.370600000000195,
+        "ready": 19.63459999999941,
+        "navigationFcp": 368
+      },
+      {
+        "selection": 12.177299999999377,
+        "ready": 16.821200000000317,
+        "navigationFcp": 408
+      },
+      {
+        "selection": 14.319999999999709,
+        "ready": 19.20010000000002,
+        "navigationFcp": 368
+      },
+      {
+        "selection": 14.88130000000092,
+        "ready": 22.126000000000204,
+        "navigationFcp": 408
+      }
+    ],
+    "navs": [
+      {
+        "fcp": 40,
+        "ttfb": 8.900000005960464,
+        "serverMs": 0.001299999999901047
+      },
+      {
+        "fcp": 176,
+        "ttfb": 134.59999999403954,
+        "serverMs": 130.6182000000008
+      }
+    ]
+  },
+  {
+    "n": 10,
+    "kind": "warm",
+    "shellMs": 447.5558000000001,
+    "startupPaintMs": 741.6906999999992,
+    "first": {
+      "fcp": 300,
+      "ttfb": 14.099999994039536
+    },
+    "pagesReady": 1,
+    "memory": {
+      "workingSet": 531558400,
+      "processes": 6,
+      "privateBytes": 288362496
+    },
+    "switches": [
+      {
+        "selection": 27.173500000000786,
+        "ready": 365.3857000000007,
+        "navigationFcp": 352
+      },
+      {
+        "selection": 11.428399999998874,
+        "ready": 17.344199999999546,
+        "navigationFcp": 300
+      },
+      {
+        "selection": 17.189300000000003,
+        "ready": 22.696200000000317,
+        "navigationFcp": 352
+      },
+      {
+        "selection": 15.412400000001071,
+        "ready": 20.202500000001237,
+        "navigationFcp": 300
+      },
+      {
+        "selection": 12.077300000000832,
+        "ready": 16.106300000001283,
+        "navigationFcp": 352
+      },
+      {
+        "selection": 14.574200000000928,
+        "ready": 20.54570000000058,
+        "navigationFcp": 300
+      }
+    ],
+    "navs": [
+      {
+        "fcp": 40,
+        "ttfb": 6.299999997019768,
+        "serverMs": 0.0011000000013154931
+      },
+      {
+        "fcp": 164,
+        "ttfb": 135.59999999403954,
+        "serverMs": 132.23500000000058
+      }
+    ]
+  },
+  {
+    "n": 30,
+    "kind": "cold",
+    "shellMs": 480.1947,
+    "startupPaintMs": 883.3888000000006,
+    "first": {
+      "fcp": 432,
+      "ttfb": 66.59999999403954
+    },
+    "pagesReady": 1,
+    "memory": {
+      "workingSet": 534290432,
+      "processes": 6,
+      "privateBytes": 287531008
+    },
+    "switches": [
+      {
+        "selection": 48.901600000001054,
+        "ready": 392.6244999999981,
+        "navigationFcp": 372
+      },
+      {
+        "selection": 14.17410000000018,
+        "ready": 19.24199999999837,
+        "navigationFcp": 432
+      },
+      {
+        "selection": 21.149100000002363,
+        "ready": 25.59230000000025,
+        "navigationFcp": 372
+      },
+      {
+        "selection": 22.964599999999336,
+        "ready": 30.360100000001694,
+        "navigationFcp": 432
+      },
+      {
+        "selection": 23.515900000002148,
+        "ready": 33.22520000000077,
+        "navigationFcp": 372
+      },
+      {
+        "selection": 20.396899999999732,
+        "ready": 25.29500000000189,
+        "navigationFcp": 432
+      }
+    ],
+    "navs": [
+      {
+        "fcp": 44,
+        "ttfb": 12.900000005960464,
+        "serverMs": 0.0006999999968684278
+      },
+      {
+        "fcp": 156,
+        "ttfb": 129.59999999403954,
+        "serverMs": 125.43599999999788
+      }
+    ]
+  },
+  {
+    "n": 30,
+    "kind": "warm",
+    "shellMs": 443.47149999999965,
+    "startupPaintMs": 743.909599999999,
+    "first": {
+      "fcp": 324,
+      "ttfb": 13.5
+    },
+    "pagesReady": 1,
+    "memory": {
+      "workingSet": 538374144,
+      "processes": 6,
+      "privateBytes": 294072320
+    },
+    "switches": [
+      {
+        "selection": 36.495600000002014,
+        "ready": 399.5601999999999,
+        "navigationFcp": 388
+      },
+      {
+        "selection": 28.265000000003056,
+        "ready": 35.268300000003364,
+        "navigationFcp": 324
+      },
+      {
+        "selection": 19.02730000000156,
+        "ready": 24.122400000000198,
+        "navigationFcp": 388
+      },
+      {
+        "selection": 20.652500000000146,
+        "ready": 26.883499999999913,
+        "navigationFcp": 324
+      },
+      {
+        "selection": 20.505200000003242,
+        "ready": 24.361300000000483,
+        "navigationFcp": 388
+      },
+      {
+        "selection": 20.584500000000844,
+        "ready": 24.753600000000006,
+        "navigationFcp": 324
+      }
+    ],
+    "navs": [
+      {
+        "fcp": 36,
+        "ttfb": 10.299999997019768,
+        "serverMs": 0.0007999999979801942
+      },
+      {
+        "fcp": 156,
+        "ttfb": 131.8999999910593,
+        "serverMs": 127.96030000000246
+      }
+    ]
+  }
+]

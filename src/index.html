@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+  <title>BrO2</title>
+  <link rel="icon" href="assets/icon.png">
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="expressive.css">
+  <script src="icons.js" defer></script>
+  <script src="ui.js" defer></script>
+  <script src="password-ui.js" defer></script>
+  <script src="extensions-ui.js" defer></script>
+  <script src="shortcuts.js" defer></script>
+  <script src="tools-ui.js" defer></script>
+  <script src="bookmarks-ui.js" defer></script>
+  <script src="session-ui.js" defer></script>
+  <script src="site-settings-ui.js" defer></script>
+  <script src="settings-ui.js" defer></script>
+  <script src="home-layout.js" defer></script>
+  <script src="home-ui.js" defer></script>
+  <script src="voice-ui.js" defer></script>
+</head>
+<body>
+  <header>
+    <div class="tab-bar">
+      <img class="mark" src="assets/icon.png" alt="BrO2" width="26" height="26">
+      <span id="private-label" hidden>Инкогнито</span>
+      <div id="tabs" aria-label="Открытые вкладки"></div>
+      <button id="new" class="icon" type="button" title="Новая вкладка (Ctrl+T)" aria-label="Новая вкладка" aria-keyshortcuts="Control+t" data-icon="plus"></button>
+      <div class="drag-space" aria-hidden="true"></div>
+    </div>
+    <div class="toolbar">
+      <button id="back" class="icon" type="button" title="Назад (Alt+←)" aria-label="Назад" data-icon="back" disabled></button>
+      <button id="forward" class="icon" type="button" title="Вперёд (Alt+→)" aria-label="Вперёд" data-icon="forward" disabled></button>
+      <button id="reload" class="icon" type="button" title="Обновить (F5)" aria-label="Обновить" disabled></button>
+      <form id="address-form" class="field omnibox">
+        <button id="address-icon" class="icon" type="button" aria-label="Разрешения и данные сайта" title="Разрешения и данные сайта" disabled></button>
+        <input id="address" type="text" role="combobox" aria-autocomplete="list" aria-controls="suggestions" aria-expanded="false" placeholder="Поиск или адрес сайта" aria-label="Поиск или адрес сайта" aria-keyshortcuts="Control+l" title="Выделить адрес (Ctrl+L)" spellcheck="false" autocomplete="off">
+        <span id="zoom-level" class="muted" role="status" hidden></span>
+        <kbd aria-hidden="true">Ctrl+L</kbd>
+        <button id="pin" class="icon" type="button" title="Добавить ярлык" aria-label="Добавить ярлык" data-icon="star" hidden></button>
+        <div id="suggestions" class="suggestions" role="listbox" aria-label="Подсказки адресной строки" hidden></div>
+      </form>
+      <button id="password-button" class="icon" type="button" title="Пароли (Alt+↓)" aria-label="Пароли" aria-keyshortcuts="Alt+ArrowDown" aria-expanded="false" data-icon="key" hidden></button>
+      <button id="extension-button" class="icon" type="button" title="Расширения" aria-label="Расширения" data-icon="puzzle"></button>
+      <button id="settings" class="icon" type="button" title="Настройки (Ctrl+,)" aria-label="Настройки" aria-controls="settings-panel" aria-expanded="false" data-icon="settings"></button>
+      <button id="browser-menu" class="icon" type="button" title="Меню браузера (Alt+F)" aria-label="Меню браузера" aria-keyshortcuts="Alt+f" aria-haspopup="menu" aria-expanded="false" data-icon="menu"></button>
+    </div>
+    <nav id="bookmarks-bar" aria-label="Панель закладок" hidden></nav>
+  </header>
+  <p id="browser-notice" role="status" hidden></p>
+  <main>
+    <section id="home" class="home">
+      <div id="home-editor" class="home-editor" hidden>
+        <div class="home-editor-title"><strong>Настройка новой вкладки</strong><small>Перетаскивай элементы или используй стрелки на их кнопках.</small></div>
+        <div class="vault-actions">
+          <button id="home-options-open" class="action" type="button" data-icon="settings">Виджеты и обои</button>
+          <button id="home-preview" class="action" type="button">Предпросмотр</button>
+          <button id="home-reset" class="action" type="button">Сбросить</button>
+          <button id="home-cancel" class="action" type="button">Отмена</button>
+          <button id="home-save" class="action primary" type="button" data-icon="check">Сохранить</button>
+        </div>
+      </div>
+      <p class="sr-only" id="home-announcement" role="status"></p>
+      <div id="home-grid">
+        <div class="home-tile home-logo" data-widget="logo">
+          <h1><img class="wordmark" src="assets/wordmark.png" alt="BrO2" width="2014" height="781"></h1>
+        </div>
+        <div class="home-tile home-search" data-widget="search">
+          <form id="search-form" class="field search">
+            <span class="field-icon" data-icon="search" aria-hidden="true"></span>
+            <input id="search" placeholder="Поиск или адрес сайта" aria-label="Поиск или адрес сайта" spellcheck="false" autocomplete="off">
+            <button id="home-microphone" type="button" class="icon" aria-pressed="false" aria-label="Голосовой ввод · на устройстве" title="Голосовой ввод · на устройстве" data-icon="mic"></button>
+            <button id="home-chatgpt" type="button" class="icon" aria-label="Открыть ChatGPT в новой вкладке" title="Открыть ChatGPT в новой вкладке" data-icon="chat"></button>
+            <button id="search-enter" type="submit" class="icon" aria-label="Поиск" title="Поиск (Enter)" data-icon="enter"></button>
+          </form>
+          <p id="home-voice-status" role="status" hidden></p>
+        </div>
+        <section class="home-tile home-card home-shortcuts" data-widget="shortcuts" aria-labelledby="shortcuts-label">
+          <h2 id="shortcuts-label" data-icon="star">Ярлыки</h2>
+          <div id="shortcuts" class="shortcuts" aria-label="Ярлыки сайтов"></div>
+        </section>
+        <section class="home-tile home-card home-clock" data-widget="clock" aria-labelledby="clock-label">
+          <h2 id="clock-label" data-icon="clock">Местное время</h2>
+          <div id="clock-face"><i aria-hidden="true"></i><i aria-hidden="true"></i><time id="clock-value">—</time></div>
+        </section>
+        <section class="home-tile home-card home-date" data-widget="date" aria-label="Дата">
+          <span data-icon="calendar"></span><time id="date-value">—</time>
+        </section>
+        <section class="home-tile home-card home-weather" data-widget="weather" hidden>
+          <h2 data-icon="cloud">Погода</h2><div id="widget-weather" class="widget-body"></div>
+        </section>
+        <section class="home-tile home-card home-media" data-widget="media" hidden>
+          <h2 data-icon="music">Медиаплеер</h2>
+          <div class="widget-body">
+            <span id="widget-media" role="status">Управление аудио и видео в открытых вкладках.</span>
+            <div class="vault-actions">
+              <button class="action primary" type="button" data-home-media="toggle" data-icon="play">Пуск / пауза</button>
+              <button class="action" type="button" data-home-media="tab" data-icon="external">К вкладке</button>
+            </div>
+          </div>
+        </section>
+        <section class="home-tile home-card home-news" data-widget="news" hidden>
+          <h2 data-icon="news">Новости BBC News</h2><div id="widget-news" class="widget-body feed-list" aria-live="polite"></div>
+        </section>
+        <section class="home-tile home-card home-feed" data-widget="feed" hidden>
+          <h2 data-icon="rss">RSS и Atom</h2><div id="widget-feed" class="widget-body feed-list" aria-live="polite"></div>
+        </section>
+      </div>
+    </section>
+    <button id="customize" class="action customize" type="button" data-icon="palette">Настроить</button>
+    <section id="failure" class="failure" hidden>
+      <div class="failure-icon" data-icon="warning"></div>
+      <h1>Страница не открылась</h1>
+      <p id="error"></p>
+      <button id="retry" class="action primary" type="button" data-icon="reload">Повторить</button>
+    </section>
+    <section id="tools-panel" class="settings-panel" aria-labelledby="tools-title" hidden>
+      <div class="settings-header">
+        <h1 id="tools-title"></h1>
+        <button id="tools-close" class="icon" type="button" aria-label="Закрыть" title="Закрыть (Esc)" aria-keyshortcuts="Escape" data-icon="close"></button>
+      </div>
+      <div id="standard-tools" class="settings-group">
+        <input id="history-query" type="search" aria-label="Поиск в истории" placeholder="Поиск по адресу или названию" hidden>
+        <input id="tab-query" type="search" aria-label="Поиск вкладок" placeholder="Поиск по адресу или названию вкладки" hidden>
+        <button id="history-clear-open" class="action" type="button" hidden>Удалить историю…</button>
+        <input id="downloads-query" type="search" aria-label="Поиск в загрузках" placeholder="Поиск по имени файла" hidden>
+        <button id="downloads-clear" class="action" type="button" hidden>Очистить список</button>
+        <button id="tasks-update" class="action" type="button" data-icon="reload" hidden>Обновить</button>
+        <ul id="tool-entries" class="vault-list"></ul>
+      </div>
+      <div id="bookmarks-page" class="settings-group" hidden>
+        <div class="vault-actions">
+          <label>Папка <select id="bookmarks-folder"></select></label>
+          <input id="bookmarks-query" type="search" aria-label="Поиск в закладках" placeholder="Поиск по закладкам">
+          <button id="bookmarks-new-folder" class="action" type="button">Новая папка</button>
+        </div>
+        <p id="bookmarks-status" role="status" hidden></p>
+        <ul id="bookmarks-list" class="vault-list"></ul>
+      </div>
+      <div id="site-settings-page" class="settings-group" hidden>
+        <label class="setting-row"><span>Сайт</span><select id="site-settings-origin"></select></label>
+        <p id="site-settings-empty">Открой сайт и нажми кнопку слева от адреса, чтобы изменить его разрешения.</p>
+        <div id="site-settings-selection" hidden>
+          <p id="site-connection" class="muted"></p>
+          <label class="setting-row"><span>Камера</span><select data-site-rule="camera"></select></label>
+          <label class="setting-row"><span>Микрофон</span><select data-site-rule="microphone"></select></label>
+          <label class="setting-row"><span>Уведомления</span><select data-site-rule="notifications"></select></label>
+          <label class="setting-row"><span>Местоположение</span><select data-site-rule="geolocation"></select></label>
+          <p id="site-geolocation" class="muted"></p>
+          <label class="setting-row"><span>Всплывающие окна</span><select data-site-rule="popups"></select></label>
+          <button id="site-clear-open" class="action" type="button">Удалить cookies и данные сайта…</button>
+        </div>
+      </div>
+      <form id="group-settings-page" class="settings-group" hidden>
+        <label class="setting-row">Имя группы <input id="group-settings-name" maxlength="64" required></label>
+        <label class="setting-row">Цвет группы <input id="group-settings-color" type="color" value="#83acf8"></label>
+        <button class="action primary" type="submit">Сохранить группу</button>
+      </form>
+      <div id="saved-groups-page" class="settings-group" hidden>
+        <ul id="saved-groups-list" class="vault-list"></ul>
+      </div>
+      <div id="reader-toolbar" class="settings-group" hidden>
+        <p id="reader-translation-destination" class="muted"></p>
+        <div class="vault-actions">
+          <label>Язык
+            <select id="reader-language">
+              <option value="ru">Русский</option>
+              <option value="en">Английский</option>
+              <option value="de">Немецкий</option>
+              <option value="es">Испанский</option>
+              <option value="fr">Французский</option>
+            </select>
+          </label>
+          <button id="reader-translate" class="action" type="button">Отправить текст на перевод</button>
+          <button id="reader-translation-cancel" class="action" type="button" hidden>Отменить перевод</button>
+          <button id="reader-original" class="action" type="button" hidden>Показать оригинал</button>
+        </div>
+      </div>
+      <article id="reader-page" class="settings-group" hidden aria-label="Текст страницы"></article>
+      <form id="clear-data-page" class="settings-group" hidden>
+        <label class="setting-row">
+          <span>Период</span>
+          <select id="clear-data-range">
+            <option value="hour">Последний час</option>
+            <option value="day">Последние 24 часа</option>
+            <option value="week">Последние 7 дней</option>
+            <option value="month">Последние 30 дней</option>
+            <option value="all">Всё время</option>
+          </select>
+        </label>
+        <label class="setting-row"><span>История посещений</span><input type="checkbox" name="categories" value="history"></label>
+        <label class="setting-row"><span>Записи о загрузках</span><input type="checkbox" name="categories" value="downloads"></label>
+        <label class="setting-row"><span>Cookies и данные сайтов</span><input type="checkbox" name="categories" value="cookies"></label>
+        <label class="setting-row"><span>Кеш</span><input type="checkbox" name="categories" value="cache"></label>
+        <label class="setting-row"><span>Разрешения сайтов</span><input type="checkbox" name="categories" value="permissions"></label>
+        <p id="clear-data-hint" class="muted">Cookies, кеш и разрешения можно удалить за всё время. Скачанные файлы останутся на диске.</p>
+        <button id="clear-data-submit" class="action primary" type="submit" disabled>Удалить выбранное</button>
+      </form>
+      <div id="extension-page" class="settings-group" hidden>
+        <button id="extension-add" class="action primary" type="button" data-icon="plus">Добавить из папки</button>
+        <p class="muted">Нужна папка распакованного расширения с файлом manifest.json. Electron поддерживает часть API Chrome.</p>
+        <p id="extension-status" class="muted" role="status" hidden></p>
+        <ul id="extension-list" class="vault-list"></ul>
+      </div>
+    </section>
+    <section id="settings-panel" class="settings-panel" aria-labelledby="settings-title" hidden>
+      <div class="settings-header">
+        <h1 id="settings-title">Настройки</h1>
+        <button id="settings-close" class="icon" type="button" aria-label="Назад" title="Назад (Esc)" data-icon="back"></button>
+        <label class="settings-search field">
+          <span class="field-icon" data-icon="search"></span>
+          <input id="settings-query" type="search" placeholder="Поиск в настройках" aria-label="Поиск в настройках">
+        </label>
+      </div>
+      <nav id="settings-nav" aria-label="Разделы настроек"></nav>
+      <div id="settings-content">
+      <h2 id="settings-category"></h2>
+      <div id="settings-results" hidden>
+        <p id="settings-no-results" role="status" hidden>Совпадений нет.</p>
+        <ul id="settings-result-list" class="vault-list"></ul>
+      </div>
+      <section id="local-profile-settings" class="settings-group" aria-labelledby="local-profile-title">
+        <h2 id="local-profile-title">Локальные профили</h2>
+        <div class="vault-actions">
+          <select id="local-profile-choice" aria-label="Выбрать локальный профиль"></select>
+          <button id="local-profile-open" class="action" type="button">Открыть</button>
+          <button id="local-profile-rename" class="action" type="button">Переименовать текущий</button>
+          <button id="local-profile-create" class="action" type="button">Новый профиль</button>
+        </div>
+        <p id="local-profile-status" role="status" hidden></p>
+      </section>
+      <section id="windows-settings" class="settings-group" aria-labelledby="windows-settings-title">
+        <h2 id="windows-settings-title">Браузер по умолчанию</h2>
+        <p class="muted">BrO2 появится в списке приложений по умолчанию Windows. Выбери его для ссылок HTTP и HTTPS.</p>
+        <button id="default-browser" class="action" type="button">Открыть выбор браузера Windows</button>
+      </section>
+      <section class="settings-group" aria-labelledby="about-title">
+        <h2 id="about-title">О браузере</h2>
+        <p id="about-versions" class="muted"></p>
+      </section>
+      <section id="spell-settings" class="settings-group" aria-labelledby="spell-title">
+        <h2 id="spell-title">Проверка орфографии</h2>
+        <label class="setting-row"><span>Проверять ввод на сайтах</span><input id="spell-enable" type="checkbox" role="switch"></label>
+        <label class="setting-row">
+          <span>Языки проверки</span>
+          <select id="spell-languages">
+            <option value="system">Язык Windows</option>
+            <option value="ru">Русский</option>
+            <option value="en-US">Английский</option>
+            <option value="ru,en-US">Русский и английский</option>
+          </select>
+        </label>
+        <p class="muted">Electron может скачать словари для выбранных языков. Проверка текста выполняется на компьютере.</p>
+      </section>
+      <section id="memory-settings" class="settings-group" aria-labelledby="memory-settings-title">
+        <h2 id="memory-settings-title">Экономия памяти</h2>
+        <label class="setting-row">
+          <span data-icon="motion">Экономия памяти</span>
+          <input id="memory-saver" type="checkbox" role="switch">
+        </label>
+        <label class="setting-row">
+          <span data-icon="clock">Время простоя до выгрузки</span>
+          <select id="memory-idle">
+            <option value="1">1 минута</option><option value="5">5 минут</option><option value="15">15 минут</option>
+            <option value="30">30 минут</option><option value="60">1 час</option><option value="120">2 часа</option>
+          </select>
+        </label>
+        <form id="memory-exceptions-form">
+          <label>Сайты, которые всегда остаются активными
+            <textarea id="memory-exceptions" rows="3" spellcheck="false" placeholder="example.com"></textarea>
+          </label>
+          <p class="muted">Укажи домены по одному на строку. Исключение включает их поддомены.</p>
+          <button class="action" type="submit">Сохранить исключения</button>
+        </form>
+        <p class="muted">Вкладка снова загрузится при переходе к ней. BrO2 сохраняет адрес и историю переходов.</p>
+      </section>
+      <div id="appearance-settings" class="settings-group">
+        <h2 data-icon="palette">Оформление</h2>
+        <label class="setting-row" for="theme">
+          <span>Тема</span>
+          <select id="theme">
+            <option value="dark">Графит</option>
+            <option value="light">Светлая</option>
+            <option value="system">Как в Windows</option>
+          </select>
+        </label>
+        <div class="setting-row">
+          <span data-icon="palette">Цвет акцента</span>
+          <div id="accents" class="accents" aria-label="Цвет акцента">
+            <button class="swatch" type="button" value="#a8bfff" aria-label="Голубой" title="Голубой"></button>
+            <button class="swatch" type="button" value="#c1a3ff" aria-label="Сиреневый" title="Сиреневый"></button>
+            <button class="swatch" type="button" value="#ff9e9e" aria-label="Розовый" title="Розовый"></button>
+            <button class="swatch" type="button" value="#a9d5bd" aria-label="Мятный" title="Мятный"></button>
+            <button class="swatch" type="button" value="#d5d7de" aria-label="Серебристый" title="Серебристый"></button>
+            <input id="accent" type="color" title="Свой цвет" aria-label="Свой цвет" value="#a8bfff">
+          </div>
+        </div>
+        <label class="setting-row" for="motion">
+          <span data-icon="motion">Анимации интерфейса</span>
+          <select id="motion">
+            <option value="off">Выкл.</option>
+            <option value="minimal">Минимум</option>
+            <option value="normal">Обычные</option>
+            <option value="expressive">Выразительные</option>
+          </select>
+        </label>
+        <div class="setting-row">
+          <span id="motion-system" class="muted" hidden>Windows уменьшает движение</span>
+          <button id="motion-preview" class="action" type="button">Посмотреть эффект</button>
+        </div>
+      </div>
+      <details id="password-settings" class="settings-group">
+        <summary>Пароли</summary>
+        <label class="setting-row">
+          <span>Предлагать сохранение после входа</span>
+          <input id="password-offers" type="checkbox" role="switch" checked>
+        </label>
+        <div class="vault-actions">
+          <input id="password-search" type="search" aria-label="Поиск по сайту и логину" placeholder="Поиск по сайту и логину">
+          <button id="password-add" class="action primary" type="button" data-icon="plus">Добавить</button>
+        </div>
+        <ul id="password-entries" class="vault-list"></ul>
+        <h3>Исключения</h3>
+        <ul id="password-exceptions" class="vault-list"></ul>
+        <p id="password-status" class="muted" role="status" hidden></p>
+      </details>
+      <details id="chrome-import" class="settings-group">
+        <summary>Импорт из Chrome</summary>
+        <div class="vault-actions">
+          <button id="import-passwords" class="action" type="button">Импорт паролей из CSV</button>
+          <button id="import-bookmarks" class="action" type="button">Импорт закладок из HTML</button>
+          <button id="export-bookmarks" class="action" type="button">Экспорт закладок в HTML</button>
+        </div>
+        <p id="import-status" class="muted" role="status" hidden></p>
+        <details id="bookmark-library">
+          <summary>Закладки</summary>
+          <ul id="bookmark-list" class="vault-list"></ul>
+        </details>
+      </details>
+      <section id="download-settings" class="settings-group" aria-labelledby="download-settings-title">
+        <h2 id="download-settings-title">Загрузки</h2>
+        <div class="setting-row">
+          <span>Папка</span>
+          <span id="download-directory-value" class="muted visited-address"></span>
+        </div>
+        <div class="vault-actions">
+          <button id="download-directory" class="action" type="button">Выбрать папку…</button>
+          <button id="download-directory-reset" class="action" type="button">Папка загрузок Windows</button>
+        </div>
+        <label class="setting-row">
+          <span>Спрашивать, куда сохранять каждый файл</span>
+          <input id="download-prompt" type="checkbox" role="switch">
+        </label>
+      </section>
+      <section id="startup-settings" class="settings-group" aria-labelledby="startup-settings-title">
+        <h2 id="startup-settings-title">Запуск и домашняя страница</h2>
+        <label class="setting-row">
+          <span>При запуске BrO2</span>
+          <select id="startup-mode">
+            <option value="new">Открывать новую вкладку</option>
+            <option value="restore">Открывать вкладки и окна последнего сеанса</option>
+            <option value="pages">Открывать указанные страницы</option>
+          </select>
+        </label>
+        <form id="startup-form">
+          <label>Домашняя страница (Alt+Home)
+            <input id="home-page" type="url" placeholder="Новая вкладка" maxlength="8192" spellcheck="false">
+          </label>
+          <label>Страницы запуска, по одному адресу на строку
+            <textarea id="startup-pages" rows="3" spellcheck="false"></textarea>
+          </label>
+          <p id="startup-status" role="status" hidden></p>
+          <button class="action" type="submit">Сохранить адреса</button>
+        </form>
+      </section>
+      <details id="custom-search-settings" class="settings-group">
+        <summary>Свои поисковые системы и ключевые слова</summary>
+        <p class="muted">В адресной строке введи ключевое слово, пробел и запрос. Запрос будет передан выбранной поисковой системе.</p>
+        <form id="custom-search-form">
+          <label>Название <input id="custom-search-name" maxlength="64" required></label>
+          <label>Ключевое слово <input id="custom-search-keyword" maxlength="24" required spellcheck="false"></label>
+          <label>HTTPS-адрес с {searchTerms}
+            <input id="custom-search-template" maxlength="2048" placeholder="https://example.com/search?q={searchTerms}" required spellcheck="false">
+          </label>
+          <button type="submit" class="action">Сохранить поисковую систему</button>
+        </form>
+        <p id="custom-search-status" role="status" hidden></p>
+        <ul id="custom-search-list" class="vault-list"></ul>
+      </details>
+      <details id="translation-settings" class="settings-group">
+        <summary>Перевод текста страниц</summary>
+        <p class="muted">Укажи свой сервер LibreTranslate. BrO2 отправит заголовок и текст из режима чтения только после нажатия кнопки перевода.</p>
+        <form id="translation-form">
+          <label>Адрес LibreTranslate API <input id="translation-endpoint" type="url" maxlength="2048" required placeholder="https://example.com/translate" spellcheck="false"></label>
+          <label>Ключ API, если нужен <input id="translation-key" type="password" maxlength="2048" autocomplete="off"></label>
+          <div class="vault-actions">
+            <button type="submit" class="action">Подключить перевод</button>
+            <button id="translation-disable" type="button" class="action" hidden>Отключить</button>
+          </div>
+        </form>
+        <p id="translation-status" role="status" hidden></p>
+      </details>
+      <div id="search-settings" class="settings-group">
+        <h2 data-icon="globe">Поиск и адресная строка</h2>
+        <label class="setting-row" for="search-engine">
+          <span data-icon="search">Поисковая система</span>
+          <select id="search-engine">
+            <option value="google">Google</option>
+            <option value="yandex">Яндекс</option>
+            <option value="duckduckgo">DuckDuckGo</option>
+            <option value="bing">Bing</option>
+          </select>
+        </label>
+        <div class="setting-row"><span data-icon="history">История подсказок</span><button id="clear-history" class="action" type="button" data-icon="trash">Очистить</button></div>
+      </div>
+      <div class="settings-group account">
+        <h2 data-icon="user">Профиль BrO2</h2>
+        <p id="account-description" class="muted">Вход в профиль BrO2 через Google.</p>
+        <p id="account-name" class="account-name" hidden></p>
+        <p id="account-email" class="muted" hidden></p>
+        <div class="account-actions">
+          <button id="google-sign-in" class="action primary" type="button" data-icon="user" hidden>Войти через Google</button>
+          <button id="google-cancel" class="action" type="button" data-icon="close" hidden>Отменить вход</button>
+          <button id="google-sign-out" class="action" type="button" data-icon="enter" hidden>Выйти</button>
+          <button id="google-import" class="action" type="button" data-icon="plus"><span>Подключить OAuth-клиент</span></button>
+          <button id="google-setup" class="action text-action" type="button" data-icon="external">Открыть Google Cloud</button>
+        </div>
+      </div>
+      <section id="new-tab-settings" class="settings-group">
+        <h2 data-icon="palette">Раскладка новой вкладки</h2>
+        <div class="setting-row"><span>Расположение элементов, виджеты, обои и ярлыки</span><button id="settings-customize-home" class="action" type="button">Настроить</button></div>
+      </section>
+      <section id="privacy-settings" class="settings-group">
+        <h2 data-icon="lock">Данные и разрешения</h2>
+        <div class="setting-row"><span data-icon="settings">Разрешения и данные сайтов</span><button id="settings-site-permissions" class="action" type="button" data-setting-tool="site-settings">Открыть</button></div>
+        <div class="setting-row"><span data-icon="trash">Удалить cookies, кеш и историю посещений</span><button id="settings-clear-data" class="action" type="button" data-setting-tool="clear-data">Открыть</button></div>
+        <div class="setting-row"><span data-icon="history">История посещений</span><button id="settings-history" class="action" type="button" data-setting-tool="history">Открыть</button></div>
+      </section>
+      <section id="extension-settings" class="settings-group">
+        <h2 data-icon="puzzle">Управление расширениями</h2>
+        <div class="setting-row"><span>Подключать расширения из папки и управлять доступом</span><button class="action" type="button" data-setting-tool="extensions">Открыть</button></div>
+      </section>
+      <p id="settings-status" class="muted" role="status" hidden></p>
+      </div>
+    </section>
+  </main>
+  <dialog id="home-options" aria-labelledby="home-options-title">
+    <div class="settings-header"><h2 id="home-options-title">Виджеты и обои</h2>
+      <button id="home-options-close" class="icon" type="button" data-icon="close" aria-label="Закрыть"></button>
+    </div>
+    <h3>Обои</h3><div id="home-wallpapers" class="wallpaper-gallery"></div>
+    <h3>Элементы на странице</h3><div id="home-widgets" class="widget-picker"></div>
+    <label class="setting-row"><span>Стиль часов</span><select data-home-field="clock">
+      <option value="digital">Цифровые</option><option value="digital-compact">Цифровые компактные</option>
+      <option value="analog">Аналоговые</option><option value="analog-dial">Аналоговые с делениями</option>
+    </select></label>
+    <label>Город для погоды (Open-Meteo)<input data-home-field="city" maxlength="100" placeholder="Москва"></label>
+    <label class="setting-row"><span>Раздел новостей BBC News</span>
+      <select data-home-field="news"><option value="technology">Технологии</option><option value="world">Мир</option></select></label>
+    <label>Адрес RSS или Atom<input type="url" data-home-field="feed" maxlength="2048" placeholder="https://example.com/feed.xml"></label>
+    <h3>Ярлыки</h3>
+    <label class="setting-row"><span>Размер</span><select data-home-field="shortcutSize">
+      <option value="small">Маленький</option><option value="medium">Средний</option><option value="large">Большой</option>
+    </select></label>
+    <label class="setting-row"><span>Форма</span><select data-home-field="shortcutShape">
+      <option value="soft">Скруглённая</option><option value="circle">Круглая</option><option value="square">Квадратная</option>
+    </select></label>
+    <label class="setting-row"><span>Показывать значки</span><input type="checkbox" role="switch" data-home-field="shortcutIcon"></label>
+    <label class="setting-row"><span>Показывать названия</span><input type="checkbox" role="switch" data-home-field="shortcutTitle"></label>
+    <ol id="home-shortcut-order" class="vault-list"></ol>
+  </dialog>
+  <dialog id="extension-review" aria-labelledby="extension-review-title">
+    <h2 id="extension-review-title">Добавить расширение?</h2>
+    <p><strong id="extension-review-name"></strong></p>
+    <p id="extension-review-description" class="muted" hidden></p>
+    <div id="extension-access"></div>
+    <p class="muted">Расширение может читать и изменять страницы, к которым получит доступ. Устанавливай расширения из источников, которым доверяешь.</p>
+    <div class="dialog-actions">
+      <button id="extension-cancel" class="action" type="button" autofocus>Отмена</button>
+      <button id="extension-install" class="action primary" type="button">Добавить</button>
+    </div>
+  </dialog>
+  <dialog id="shortcut-dialog" aria-labelledby="shortcut-title">
+    <form id="shortcut-form">
+      <h2 id="shortcut-title" data-icon="star">Новый ярлык</h2>
+      <label>Название <input id="shortcut-name" required maxlength="50"></label>
+      <label>Адрес сайта <input id="shortcut-url" required spellcheck="false" placeholder="example.com"></label>
+      <p id="shortcut-error" class="muted" role="alert" hidden>Введи адрес сайта.</p>
+      <div class="dialog-actions">
+        <button id="shortcut-cancel" class="action" type="button" data-icon="close">Отмена</button>
+        <button class="action primary" type="submit" data-icon="check">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="password-editor" aria-labelledby="password-editor-title">
+    <form id="password-form">
+      <h2 id="password-editor-title">Новый пароль</h2>
+      <label>HTTPS-адрес <input id="password-origin" type="url" required placeholder="https://example.com" spellcheck="false"></label>
+      <label>Логин <input id="password-username" maxlength="1024" autocomplete="off" spellcheck="false"></label>
+      <label>Пароль <input id="password-secret" type="password" required maxlength="8192" autocomplete="new-password"></label>
+      <p id="password-editor-status" class="muted" role="alert" hidden></p>
+      <div class="dialog-actions">
+        <button id="password-editor-cancel" class="action" type="button">Отмена</button>
+        <button id="password-editor-save" class="action primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="password-remove" aria-labelledby="password-remove-title">
+    <h2 id="password-remove-title">Удалить пароль?</h2>
+    <p id="password-remove-label"></p>
+    <div class="dialog-actions">
+      <button id="password-remove-cancel" class="action" type="button" autofocus>Отмена</button>
+      <button id="password-remove-confirm" class="action primary" type="button">Удалить</button>
+    </div>
+  </dialog>
+  <dialog id="import-preview" aria-labelledby="import-preview-title">
+    <h2 id="import-preview-title">Проверка импорта</h2>
+    <p id="import-counts"></p>
+    <p id="import-errors" class="muted" hidden></p>
+    <ul id="import-folders" hidden></ul>
+    <label id="import-replace-label" hidden><input id="import-replace" type="checkbox"> Заменить пароли в конфликтующих записях</label>
+    <div class="dialog-actions">
+      <button id="import-cancel" class="action" type="button" autofocus>Отмена</button>
+      <button id="import-confirm" class="action primary" type="button">Импортировать</button>
+    </div>
+  </dialog>
+  <dialog id="local-profile-dialog" aria-labelledby="local-profile-dialog-title">
+    <form id="local-profile-form">
+      <h2 id="local-profile-dialog-title"></h2>
+      <label>Имя профиля <input id="local-profile-name" maxlength="48" required autofocus></label>
+      <p id="local-profile-form-status" role="status" hidden></p>
+      <div class="vault-actions">
+        <button id="local-profile-cancel" class="action" type="button">Отмена</button>
+        <button id="local-profile-save" class="action primary" type="submit">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="site-clear-dialog" aria-labelledby="site-clear-title">
+    <form method="dialog">
+      <h2 id="site-clear-title">Удалить данные сайта?</h2>
+      <p>Это может завершить вход. Cookies могут использоваться и на других поддоменах сайта.</p>
+      <div class="vault-actions">
+        <button class="action" value="cancel" autofocus>Отмена</button>
+        <button class="action primary" value="confirm">Удалить</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="history-clear-dialog" aria-labelledby="history-clear-title">
+    <form method="dialog">
+      <h2 id="history-clear-title">Удалить историю посещений</h2>
+      <label>Период
+        <select id="history-clear-range">
+          <option value="hour">Последний час</option>
+          <option value="day">Последние 24 часа</option>
+          <option value="week">Последние 7 дней</option>
+          <option value="month">Последние 30 дней</option>
+          <option value="all">Всё время</option>
+        </select>
+      </label>
+      <div class="vault-actions">
+        <button class="action" value="cancel" autofocus>Отмена</button>
+        <button class="action primary" value="confirm">Удалить</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="bookmarks-dialog" aria-labelledby="bookmarks-dialog-title">
+    <form id="bookmarks-form">
+      <h2 id="bookmarks-dialog-title"></h2>
+      <label>Название <input id="bookmarks-name" required maxlength="512" autofocus></label>
+      <label id="bookmarks-url-label">Адрес <input id="bookmarks-url" type="url" spellcheck="false"></label>
+      <label>Папка <select id="bookmarks-destination"></select></label>
+      <p id="bookmarks-form-status" role="status" hidden></p>
+      <div class="vault-actions">
+        <button id="bookmarks-cancel" type="button" class="action">Отмена</button>
+        <button id="bookmarks-save" class="action primary">Сохранить</button>
+      </div>
+    </form>
+  </dialog>
+  <dialog id="bookmarks-delete-dialog" aria-labelledby="bookmarks-delete-title">
+    <form method="dialog">
+      <h2 id="bookmarks-delete-title">Удалить из закладок?</h2>
+      <p id="bookmarks-delete-name"></p>
+      <div class="vault-actions">
+        <button class="action" value="cancel" autofocus>Отмена</button>
+        <button class="action primary" value="confirm">Удалить</button>
+      </div>
+    </form>
+  </dialog>
+  <template id="tab-template">
+    <div class="tab">
+      <button class="tab-title" type="button"><span class="tab-icon"></span><span class="tab-label"></span></button>
+      <button class="close icon" type="button" title="Закрыть вкладку" aria-label="Закрыть вкладку"></button>
+    </div>
+  </template>
+</body>
+</html>

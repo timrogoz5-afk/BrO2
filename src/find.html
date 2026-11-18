@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; base-uri 'none'; form-action 'none'">
+  <title>Поиск на странице</title>
+  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="expressive.css">
+  <script src="icons.js" defer></script>
+  <script src="find-ui.js" defer></script>
+</head>
+<body class="find-window">
+  <div id="find-bar" role="search" aria-label="Поиск на странице">
+    <input id="find-text" type="search" aria-label="Найти на странице" placeholder="Найти на странице" spellcheck="false" autocomplete="off">
+    <span id="find-count" role="status">0 из 0</span>
+    <button id="find-previous" class="icon" type="button" data-icon="up" title="Предыдущее совпадение (Shift+Enter)" aria-label="Предыдущее совпадение" aria-keyshortcuts="Shift+Enter" disabled></button>
+    <button id="find-next" class="icon" type="button" data-icon="down" title="Следующее совпадение (Enter)" aria-label="Следующее совпадение" aria-keyshortcuts="Enter" disabled></button>
+    <button id="find-close" class="icon" type="button" data-icon="close" title="Закрыть поиск (Esc)" aria-label="Закрыть поиск" aria-keyshortcuts="Escape"></button>
+  </div>
+</body>
+</html>
