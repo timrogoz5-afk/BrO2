@@ -104,7 +104,8 @@ function devtools(target) {
 }
 
 async function run() {
-  const directory = await fs.mkdtemp(path.join(os.tmpdir(), 'bro2-e2e-'));
+  const temp = await fs.realpath(os.tmpdir());
+  const directory = await fs.mkdtemp(path.join(temp, 'bro2-e2e-'));
   const userData = path.join(directory, 'profile');
   const connections = [];
   const servers = [];
@@ -159,12 +160,34 @@ async function run() {
         for await (const chunk of request) body += chunk;
         const values = new URLSearchParams(body);
         submissionCount++;
+        if (route === '/script-auth') {
+          response.writeHead(values.get('secret') === 'rejected' ? 401 : 204);
+          return response.end();
+        }
+        if (route === '/direct') return send('<h1 id="account">Account</h1>');
         if (route === '/step-one') return redirect('/step-two');
         if (route === '/otp') return redirect('/code');
         if (values.get('secret') === 'rejected') return redirect('/wrong');
         return redirect('/account');
       }
       if (route === '/account') return send('<h1 id="account">Account</h1>');
+      if (route === '/direct') return send(login('/direct'));
+      if (route === '/script-login') return send(login().replace('method="post"', '') + `<script>
+        document.querySelector('form').addEventListener('submit', async (event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const response = await fetch('/script-auth', { method: 'POST', body: new URLSearchParams(new FormData(form)) });
+          if (!response.ok) {
+            const error = document.createElement('p');
+            error.role = 'alert';
+            error.textContent = 'Wrong password';
+            form.append(error);
+            return;
+          }
+          form.replaceWith(Object.assign(document.createElement('h1'), { id: 'account', textContent: 'Account' }));
+          history.replaceState(null, '', '/script-account');
+        });
+      </script>`);
       if (route === '/wrong') return send('<p role="alert">Wrong password</p>' + login());
       if (route === '/registration') return send(registration());
       if (route === '/change') return send(registration('/change', '<input type="password" autocomplete="current-password" name="old">'));
@@ -219,9 +242,10 @@ async function run() {
       await fs.rm(path.join(userData, 'DevToolsActivePort'), { force: true });
       processHandle = spawn(path.join(__dirname, '..', 'BrO2-portable', 'BrO2.exe'), [
         `--user-data-dir=${userData}`, '--remote-debugging-port=0', '--remote-debugging-address=127.0.0.1',
+        '--disable-backgrounding-occluded-windows', '--disable-renderer-backgrounding', '--disable-background-timer-throttling',
         `--ignore-certificate-errors-spki-list=${spki}`,
-        ...(featureTest ? ['--inspect=127.0.0.1:0', '--use-fake-device-for-media-stream', '--disable-backgrounding-occluded-windows'] : []),
-      ], { windowsHide: true });
+        ...(featureTest ? ['--inspect=127.0.0.1:0', '--use-fake-device-for-media-stream'] : []),
+      ]);
       processHandle.on('error', (error) => { logs += error.message; });
       let inspectURL;
       let inspectLog = '';
@@ -267,6 +291,7 @@ async function run() {
       site = devtools(target);
       connections.push(site);
       await until(() => site.evaluate(`document.readyState === 'complete' && Boolean(document.querySelector(${JSON.stringify(selector)}))`), 'Fixture page did not become ready');
+      await site.call('Page.bringToFront', {});
     }
     async function offered() {
       return popup.evaluate('!document.querySelector("#password-panel").hidden');
@@ -288,19 +313,31 @@ async function run() {
       await fs.writeFile(path.join(destination, name + '.png'), Buffer.from(data, 'base64'));
     }
     async function submit(username, password, withEnter = false) {
+      const before = submissionCount;
       await site.evaluate(`(() => { const username = document.querySelector('#login');
         if (username) username.value = ${JSON.stringify(username)};
         const password = document.querySelector('#secret');
         if (password) password.value = ${JSON.stringify(password)};
       })()`);
       if (withEnter) {
-        const before = submissionCount;
+        await site.click('#secret');
         await site.evaluate('document.querySelector("#secret").focus()');
         await until(() => site.evaluate('document.activeElement.id === "secret"'), 'Click did not focus the password field');
         await site.key('Enter', 'Enter', 13);
         await delay(280);
         if (submissionCount === before) await site.key('Enter', 'Enter', 13);
       } else await site.click('#submit');
+      if (before === submissionCount) {
+        try { await until(() => submissionCount > before, 'Waiting for the fixture to receive the input', 500); }
+        catch {
+          // Embedded views can miss CDP input when Windows changes the foreground window.
+          await site.call('Runtime.evaluate', {
+            expression: 'document.querySelector("form").requestSubmit(document.querySelector("#submit"))',
+            userGesture: true,
+          });
+        }
+      }
+      await until(() => submissionCount > before, 'The fixture did not receive a form submission');
     }
     async function chooseSave() {
       await popup.click('#password-panel .primary');
@@ -371,6 +408,8 @@ async function run() {
     await start();
     await go(origin + '/login');
     if (featureTest) await until(() => site.evaluate('document.body.dataset.bro2Extension === "on"'), 'Extension did not restore after restart');
+    await waitPanel('first');
+    assert.equal(await site.evaluate('document.querySelector("#secret").value'), '');
     await fill('first', oldSecret);
     assert.equal(await site.evaluate('document.querySelector("#login").value'), 'first');
 
@@ -394,6 +433,20 @@ async function run() {
     await go(origin + '/login');
     await site.evaluate('document.querySelector("#login").value = "first"');
     await fill('first', newSecret);
+
+    phase = 'direct and scripted submissions';
+    await go(origin + '/direct');
+    await submit('direct-user', oldSecret);
+    await waitPanel('direct-user');
+    await popup.key('Escape', 'Escape', 27);
+    await go(origin + '/script-login');
+    await submit('script-user', 'rejected');
+    await until(() => site.evaluate('document.querySelector("[role=alert]")?.textContent'), 'Scripted denial did not appear');
+    await noPanel();
+    await go(origin + '/script-login?retry');
+    await submit('script-user', oldSecret);
+    await waitPanel('script-user');
+    await popup.key('Escape', 'Escape', 27);
 
     phase = 'two-step and one-time code';
     await go(origin + '/step-one');
@@ -885,7 +938,7 @@ async function run() {
     }
     assert(!logs.includes(oldSecret) && !logs.includes(newSecret));
     await stop();
-    console.log('Portable Electron: save on Enter, secure restart and fill, update, multiple logins, two-step, OTP, dynamic forms, Escape, generation, origins, TLS, iframe, navigation, tab reset, settings, themes, and reduced motion passed.');
+    console.log('Portable Electron: automatic suggestions, secure restart and fill, native and scripted sign-in, updates, two-step forms, OTP, TLS, iframe isolation, navigation, settings, themes, and reduced motion passed.');
   } catch (error) {
     console.error(`Portable check failed in phase "${phase}" after ${submissionCount} form submissions: ${error.message}`);
     console.error(logs.slice(-4000));
@@ -894,6 +947,7 @@ async function run() {
     if (processHandle?.exitCode === null) processHandle.kill();
     connections.forEach((connection) => connection.close());
     servers.forEach((server) => { server.close(); server.closeAllConnections(); });
+    assert.equal(path.dirname(await fs.realpath(directory)), temp);
     await fs.rm(directory, { recursive: true, force: true, maxRetries: 10, retryDelay: 250 });
   }
 }

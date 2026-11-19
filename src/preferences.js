@@ -6,6 +6,7 @@ const { sessionURL, savedTab } = require('./session-state');
 const { homeLayout } = require('./home-layout');
 const { siteOrigin, siteRules, updateSiteRules } = require('./site-permissions');
 const { translationEndpoint } = require('./translation');
+const { faviconData } = require('./favicon');
 
 const historyLimit = 5000;
 const defaults = { theme: 'dark', search: 'google', motion: 'normal', accent: '#a8bfff', passwordOffers: true, bookmarkBar: false,
@@ -13,7 +14,7 @@ const defaults = { theme: 'dark', search: 'google', motion: 'normal', accent: '#
   memoryIdle: 30, memoryExceptions: [] };
 const rules = {
   theme: (value) => ['dark', 'light', 'system'].includes(value),
-  search: (value) => ['google', 'yandex', 'duckduckgo', 'bing'].includes(value) ||
+  search: (value) => ['google', 'yandex', 'duckduckgo', 'bing', 'perplexity'].includes(value) ||
     (typeof value === 'string' && value.startsWith('custom:')),
   motion: (value) => ['off', 'minimal', 'normal', 'expressive'].includes(value),
   passwordOffers: (value) => typeof value === 'boolean',
@@ -72,7 +73,10 @@ function preferences(directory) {
     searchEngines: (Array.isArray(saved.searchEngines) ? saved.searchEngines : []).slice(0, 30).map(customSearchEngine).filter(Boolean),
     history: links(saved.history, historyLimit).map(({ id, title, url, time }) => ({
       id: typeof id === 'string' ? id : randomUUID(), title, url, time,
-    })), shortcuts: links(saved.shortcuts, 12),
+    })), shortcuts: links(saved.shortcuts, 12).map(({ url, title, favicon }) => {
+      const icon = faviconData(favicon);
+      return icon ? { url, title, favicon: icon } : { url, title };
+    }),
     readingList: links(saved.readingList),
     home: homeLayout(saved.home), savedGroups: savedGroups(saved.savedGroups),
   };
@@ -160,8 +164,19 @@ function preferences(directory) {
     },
     setShortcut(url, title) {
       const remaining = data.shortcuts.filter((item) => item.url !== url);
-      const shortcuts = title ? [...remaining, { url, title }].slice(0, 12) : remaining;
+      const origin = new URL(url).origin;
+      const favicon = data.shortcuts.find((item) => item.favicon && new URL(item.url).origin === origin)?.favicon;
+      const shortcut = favicon ? { url, title, favicon } : { url, title };
+      const shortcuts = title ? [...remaining, shortcut].slice(0, 12) : remaining;
       save({ ...data, shortcuts });
+    },
+    setShortcutIcon(origin, value) {
+      const favicon = faviconData(value);
+      if (!favicon || !data.shortcuts.some((item) => !item.favicon && new URL(item.url).origin === origin)) return false;
+      const shortcuts = data.shortcuts.map((item) =>
+        !item.favicon && new URL(item.url).origin === origin ? { ...item, favicon } : item);
+      save({ ...data, shortcuts });
+      return true;
     },
     addReadingList(url, title) {
       const address = webURL(url);

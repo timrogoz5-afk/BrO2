@@ -8,6 +8,8 @@ const { preferences } = require('./preferences');
 const { desktopClient, googleSignIn } = require('./google');
 const { passwords } = require('./passwords');
 const { extensionManager } = require('./extensions');
+const { extensionPopup } = require('./extension-popup');
+const { storeListing } = require('./extension-store');
 const { passwordVault } = require('./password-vault');
 const { bookmarks } = require('./bookmarks');
 const { shortcutCommand } = require('./shortcuts');
@@ -151,6 +153,31 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
   }
   const regularSession = session.fromPartition(profileId === defaultId ? browsingPartition : `persist:bro2-profile-${profileId}`);
   configureSession(regularSession);
+  const shortcutIconRequests = new Map();
+  const shortcutIcons = new AbortController();
+
+  function rememberShortcutIcon(url, favicon) {
+    const origin = siteOrigin(url, false);
+    if (quitting || !favicon || !origin) return;
+    try {
+      if (prefs.setShortcutIcon(origin, favicon)) for (const owner of windows) owner.historyChanged();
+    } catch { /* The shortcut still works without an icon. */ }
+  }
+
+  function loadShortcutIcons() {
+    const missing = new Set(prefs.current.shortcuts.filter(({ favicon }) => !favicon)
+      .map(({ url }) => siteOrigin(url, false)).filter(Boolean));
+    for (const origin of shortcutIconRequests.keys()) {
+      if (!missing.has(origin)) shortcutIconRequests.delete(origin);
+    }
+    for (const origin of missing) {
+      if (shortcutIconRequests.get(origin) > Date.now()) continue;
+      shortcutIconRequests.set(origin, Date.now() + 60_000);
+      void readFavicon(regularSession, [origin + '/favicon.ico'], shortcutIcons.signal)
+        .then((favicon) => rememberShortcutIcon(origin, favicon));
+    }
+  }
+
   const regularDownloads = downloads(profileDirectory, regularSession, () => {
     for (const owner of windows) owner.downloadsChanged();
   }, () => ({
@@ -164,12 +191,13 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
   const uploads = new Map();
   const webRequests = { urls: ['http://*/*', 'https://*/*'] };
   regularSession.webRequest.onBeforeRequest(webRequests, (details, callback) => {
-    const tab = siteOwners.get(details.webContentsId)?.tab;
+    const source = siteOwners.get(details.webContentsId);
+    const tab = source?.tab;
     if (tab && details.uploadData?.length && !uploads.has(details.id)) {
       tab.uploadCount = (tab.uploadCount || 0) + 1;
       uploads.set(details.id, tab);
     }
-    if (details.url.startsWith('https:')) for (const owner of windows) owner.credentials.observePost(details);
+    if (details.url.startsWith('https:')) source?.owner.credentials.observePost(details);
     callback({});
   });
   function finishUpload({ id }) {
@@ -177,9 +205,13 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     if (tab) tab.uploadCount--;
     uploads.delete(id);
   }
-  regularSession.webRequest.onCompleted(webRequests, finishUpload);
+  regularSession.webRequest.onCompleted(webRequests, (details) => {
+    finishUpload(details);
+    siteOwners.get(details.webContentsId)?.owner.credentials.observeResponse(details);
+  });
   regularSession.webRequest.onErrorOccurred(webRequests, finishUpload);
   function open(url) {
+    loadShortcutIcons();
     const owner = [...windows].find(({ privateMode }) => !privateMode);
     if (owner) {
       if (owner.window.isMinimized()) owner.window.restore();
@@ -205,6 +237,10 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
   }
 
   function createWindow(privateMode = false, initialTab, initialWindow) {
+    const appearance = () => {
+      const { settings: { theme, accent, motion }, home } = prefs.current;
+      return { theme, accent, motion, wallpaper: privateMode ? 'aurora' : home.wallpaper };
+    };
     const browsingSession = privateMode ? session.fromPartition(`bro2-private-${randomUUID()}`) : regularSession;
     if (privateMode) configureSession(browsingSession);
     const windowDownloads = privateMode ? downloads(null, browsingSession, downloadsChanged, app.getPath('downloads')) : regularDownloads;
@@ -253,6 +289,8 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     let passwordHeight = 0;
     let extensionEpoch = 0;
     let choosingExtension = false;
+    let extensionDownload;
+    let extensionStoreSource = '';
     let toolPage = '';
     let find;
     let browserMenu;
@@ -266,11 +304,24 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     const credentials = passwords({
       vault, library, window, chrome: chrome.webContents, passwordPopup, browsingSession,
       active: () => active, shellURL, passwordURL, privateMode,
-      settings: () => ({ open: settingsOpen, site: showingSite(), offers: prefs.current.settings.passwordOffers, style: prefs.current.settings }),
+      settings: () => ({ open: settingsOpen, site: showingSite(), offers: prefs.current.settings.passwordOffers, style: appearance() }),
       resize(height) { passwordHeight = height; layout(); },
     });
+    const extensionPanel = extensionPopup({
+      window, extensions, browsingSession, isolated, appearance,
+      dismissOverlays() { credentials.dismiss(); closeFind(false); dropdownHeight = 0; },
+      redraw, layout, publish, report: pageStatus, manage: openExtensions, shortcut: handleShortcut,
+      openTab(url, focus, id) { createTab(url, focus, id); },
+      focusButton(id) {
+        chrome.webContents.focus();
+        chrome.webContents.send('browser:extension-focus', id);
+      },
+      changed() { for (const other of windows) other.extensionsChanged(); },
+    });
     const owner = { window, privateMode, credentials, downloadsChanged() { if (!privateMode) downloadsChanged(); },
+      extensionsChanged() { publish(); extensionPanel.refresh(); },
       closeExtension(id) {
+        extensionPanel.closeExtension(id);
         for (const tab of tabs.values()) if (tab.extension === id) closeTab(tab.id, false);
       },
       bookmarksChanged: refreshBookmarks,
@@ -325,10 +376,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     windows.add(owner);
     const chromeId = chrome.webContents.id;
     shellMicrophones.set(chromeId, () => !closed && window.isFocused() && showingHome());
-    const updateCaption = () => window.setTitleBarOverlay(caption());
-    owner.updateCaption = updateCaption;
     owner.updateMemoryTimer = updateMemoryTimer;
-    nativeTheme.on('updated', updateCaption);
 
     function showingSite() {
       return !settingsOpen && !toolPage && Boolean(active?.url) && !active.error;
@@ -415,8 +463,14 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
         history: privateMode ? [] : toolPage === 'history' ? prefs.current.history : prefs.current.history.slice(0, 160),
         shortcuts: privateMode ? [] : prefs.current.shortcuts,
         home: privateMode ? undefined : prefs.current.home,
+        homeMedia: !privateMode && showingHome() ? describeMedia(currentMedia()) : null,
         readingList: privateMode ? [] : prefs.current.readingList,
         privateMode, toolPage, find: Boolean(find), bookmarks: bookmarkItems, bookmarkBar: bookmarkBar(),
+        storeListing: !privateMode && !settingsOpen && Boolean(storeListing(active.url)),
+        extensionStoreSource: toolPage === 'extensions' ? extensionStoreSource : '',
+        extensionPanelOpen: extensionPanel.open,
+        extensionPanelAnchor: extensionPanel.anchorId,
+        pinnedExtensions: privateMode ? [] : extensions.pinned(),
         pageVisible: showingSite(), verticalTabs,
         account: {
           configured: !privateMode && Boolean(prefs.current.googleClient),
@@ -459,6 +513,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
         height: Math.min(Math.max(0, height - top), passwordHeight) });
       const findWidth = Math.min(380, width - 16);
       findPopup?.setBounds({ x: width - findWidth - 8, y: top + 6, width: findWidth, height: 48 });
+      extensionPanel.resize(width, height);
       const x = verticalTabs ? sidebarWidth : 0;
       const y = Math.min(height, top + (verticalTabs ? dropdownHeight : 0));
       const area = { x, y, width: Math.max(0, width - x), height: height - y };
@@ -478,8 +533,8 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     function redraw() {
       const pages = visibleTabs();
       const pageViews = pages.map(({ view }) => view);
-      const desired = (verticalTabs ? [chrome, ...pageViews, findPopup, passwordPopup]
-        : [...pageViews, findPopup, chrome, passwordPopup]).filter(Boolean);
+      const desired = (verticalTabs ? [chrome, ...pageViews, findPopup, passwordPopup, extensionPanel.view]
+        : [...pageViews, findPopup, chrome, passwordPopup, extensionPanel.view]).filter(Boolean);
       const current = window.contentView.children;
       if (current.length !== desired.length || current.some((view, index) => view !== desired[index])) {
         for (const view of current) if (!desired.includes(view)) window.contentView.removeChildView(view);
@@ -498,6 +553,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     }
 
     function toggleSettings() {
+      extensionPanel.close();
       credentials.reset(active);
       closeFind(false);
       if (settingsOpen) credentials.leaveSettings();
@@ -511,6 +567,8 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     function setToolPage(page = '') {
       if (toolPage === 'extensions' && page !== toolPage) {
         extensionEpoch++;
+        extensionDownload?.abort();
+        extensionStoreSource = '';
         void extensions.cancel(owner);
       }
       if (page !== 'reader') {
@@ -530,10 +588,12 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
 
     function selectTab(tab, focus = true) {
       if (!tab) return;
+      extensionPanel.close();
       if (tab.suspended) tab = wakeTab(tab);
       closeFind(false);
       setToolPage(tab.tool);
       credentials.reset(active);
+      const switched = active !== tab;
       if (settingsOpen) credentials.leaveSettings();
       settingsOpen = false;
       if (active && active !== tab) active.lastActive = Date.now();
@@ -546,9 +606,11 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
         else if (tab.tool) chrome.webContents.focus();
         else focusAddress();
       }
+      if (switched) credentials.suggest();
     }
 
     function navigate(tab, url, loadOptions) {
+      if (tab === active) extensionPanel.close();
       if (!url) return;
       if (tab === active) {
         closeFind(false);
@@ -643,6 +705,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
       contents.on('enter-html-full-screen', () => { if (owner.visible(tab)) window.setFullScreen(true); });
       contents.on('leave-html-full-screen', () => { if (tab === active && window.isFullScreen()) window.setFullScreen(false); });
       contents.on('did-navigate', (_event, url) => {
+        if (tab === active) extensionPanel.close();
         const hadFind = tab === active && Boolean(find);
         if (hadFind) closeFind(false);
         if (!webURL(url) || !webURL(tab.url) || new URL(url).origin !== new URL(tab.url).origin) {
@@ -661,6 +724,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
         tab.initialURL = '';
         tab.dirty = false;
         tab.playedMedia = false;
+        tab.playingMedia = false;
         tab.capturedMedia = false;
         const zoomOrigin = siteOrigin(tab.url, false);
         if (zoomOrigin) {
@@ -697,6 +761,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
         const favicon = await readFavicon(browsingSession, urls, request.signal);
         if (request.signal.aborted || closed || tab.favicon === favicon) return;
         tab.favicon = favicon;
+        if (!privateMode) rememberShortcutIcon(tab.url, favicon);
         queuePublish();
       });
       contents.on('did-start-loading', () => {
@@ -734,6 +799,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
       });
       contents.on('before-input-event', handleShortcut);
       contents.on('focus', () => {
+        if (visibleTabs().includes(tab)) extensionPanel.close();
         if (tab !== active && visibleTabs().includes(tab)) selectTab(tab, false);
       });
       contents.on('zoom-changed', (_event, direction) => {
@@ -744,7 +810,13 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
       });
       contents.on('media-started-playing', () => {
         tab.playedMedia = true;
+        tab.playingMedia = true;
         mediaTabId = tab.id;
+        if (showingHome()) queuePublish();
+      });
+      contents.on('media-paused', () => {
+        tab.playingMedia = false;
+        if (showingHome()) queuePublish();
       });
       contents.ipc.on('browser:site-edited', (event) => {
         if (event.senderFrame?.top === contents.mainFrame) tab.dirty = true;
@@ -810,12 +882,19 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     }
 
     function newGroup(members, edit = false) {
+      if (!members.length) return;
       const id = nextGroupId++;
       const group = { id, title: 'Группа ' + id, color: groupColors[(id - 1) % groupColors.length] };
-      for (const tab of members) {
-        removeFromGroup(tab);
-        addToGroup(tab, group);
-      }
+      const order = [...tabs.values()];
+      const anchor = members[0];
+      const boundary = anchor.group ? order.findLastIndex((tab) => tab.group === anchor.group) : order.indexOf(anchor);
+      const selected = new Set(members);
+      const position = order.slice(0, boundary).filter((tab) => !selected.has(tab)).length;
+      const remaining = order.filter((tab) => !selected.has(tab));
+      for (const tab of members) tab.group = group;
+      remaining.splice(position + Number(!selected.has(order[boundary])), 0, ...members);
+      orderTabs(remaining);
+      publish();
       if (edit) editGroup(group);
     }
 
@@ -908,6 +987,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     }
 
     function addToGroup(tab, group) {
+      if (tab.group === group) return;
       const order = [...tabs.values()].filter((item) => item !== tab);
       const lastMember = order.findLastIndex((item) => item.group?.id === group.id);
       if (lastMember >= 0) {
@@ -1067,19 +1147,35 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
       }
     }
 
+    function mediaCandidates() {
+      return [...tabs.values()].filter((tab) => tab.view && !tab.error && webURL(tab.url)).sort((a, b) =>
+        Number(Boolean(b.playingMedia)) - Number(Boolean(a.playingMedia)) ||
+        Number(b.id === mediaTabId) - Number(a.id === mediaTabId) ||
+        Number(Boolean(b.playedMedia)) - Number(Boolean(a.playedMedia)) || b.lastActive - a.lastActive);
+    }
+
+    function currentMedia() {
+      return mediaCandidates().find((tab) => tab.playedMedia);
+    }
+
+    function describeMedia(tab) {
+      return tab ? { title: tab.title, source: new URL(tab.url).hostname, playing: Boolean(tab.playingMedia) } : null;
+    }
+
     async function homeMedia(action) {
-      const candidates = [...tabs.values()].filter((tab) => tab.view && !tab.error && webURL(tab.url));
-      candidates.sort((a, b) => Number(b.id === mediaTabId) - Number(a.id === mediaTabId) ||
-        Number(b.playedMedia || false) - Number(a.playedMedia || false) || b.lastActive - a.lastActive);
       if (action === 'tab') {
-        const chosen = candidates.find((tab) => tab.playedMedia);
-        if (chosen) { selectTab(chosen); return { ok: true, title: chosen.title }; }
+        const chosen = currentMedia();
+        if (chosen) { selectTab(chosen); return { ok: true }; }
       } else {
-        for (const tab of candidates) {
+        for (const tab of mediaCandidates()) {
           if (!showingHome() || !tabs.has(tab.id)) break;
-          if (await controlMedia(tab, 'toggle')) {
+          const result = await controlMedia(tab, 'home-toggle');
+          if (result && tabs.has(tab.id) && webURL(tab.url)) {
+            tab.playedMedia = true;
+            tab.playingMedia = result.playing;
             mediaTabId = tab.id;
-            return { ok: true, title: tab.title };
+            queuePublish();
+            return { ok: true, media: describeMedia(tab) };
           }
         }
       }
@@ -1204,6 +1300,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     }
 
     function openTool(page) {
+      extensionPanel.close();
       closeFind(false);
       credentials.reset(active);
       if (settingsOpen) credentials.leaveSettings();
@@ -1247,7 +1344,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
         findPopup.setVisible(true);
         redraw();
         findPopup.webContents.focus();
-        findPopup.webContents.send('browser:find-focus', prefs.current.settings, fresh);
+        findPopup.webContents.send('browser:find-focus', appearance(), fresh);
       }).catch(() => {
         if (closed || !findPopup) return;
         closeFind();
@@ -1308,6 +1405,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
 
     function openExtensions() {
       if (privateMode) return;
+      if (storeListing(active.url)) extensionStoreSource = active.url;
       const existing = [...tabs.values()].find((tab) => tab.tool === 'extensions');
       if (existing) selectTab(existing);
       else createTab('', true, undefined, false, tabs.size, { tool: 'extensions' });
@@ -1648,6 +1746,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
       const command = shortcutCommand(input);
       if (!command) return;
       event.preventDefault();
+      extensionPanel.close();
       runCommand(...command);
     }
     async function importGoogle() {
@@ -1766,7 +1865,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
           if (started.owner === owner) {
             const tab = tabs.get(started.id);
             if (started.groupId) moveGroup(findGroup(started.groupId), target, Boolean(value.after));
-            else if (tab && !tab.pinned && group) addToGroup(tab, group);
+            else if (tab && !tab.pinned && group && value.combine) addToGroup(tab, group);
             else if (value.combine && tab && target && target !== tab && !tab.pinned && !target.pinned) {
               if (target.group) addToGroup(tab, target.group);
               else newGroup([target, tab]);
@@ -1774,7 +1873,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
           } else if (started.id && windows.has(started.owner) && !started.owner.privateMode) {
             const transfer = started.owner.transferTab(started.id);
             if (transfer) {
-              owner.receiveTab(transfer.snapshot, value.targetId, Boolean(value.after));
+              owner.receiveTab(transfer.snapshot, target?.id, Boolean(value.after));
               transfer.remove();
             }
           }
@@ -1825,7 +1924,13 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
           if (!url) break;
           const { username, password } = new URL(url);
           if (username || password) break;
-          try { prefs.setShortcut(url, value.title.trim().slice(0, 50)); }
+          try {
+            const title = value.title.trim().slice(0, 50);
+            prefs.setShortcut(url, title);
+            if (title && active.url === url) rememberShortcutIcon(url, active.favicon);
+            loadShortcutIcons();
+            for (const other of windows) if (other !== owner) other.historyChanged();
+          }
           catch { status = 'Не удалось сохранить ярлык.'; }
           publish();
           break;
@@ -1902,6 +2007,12 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
         case 'menu': commandMenu(); break;
         case 'site-settings': openSiteSettings(false); break;
         case 'extensions': openExtensions(); break;
+        case 'extension-panel':
+          if (!privateMode && (value?.id === undefined || typeof value.id === 'string')) {
+            void extensionPanel.show(value?.anchor, value?.id);
+          }
+          break;
+        case 'extension-panel-dismiss': extensionPanel.close(false, true); break;
         case 'shortcut-key': {
           if (!value || typeof value.code !== 'string') break;
           const command = shortcutCommand(value);
@@ -1956,7 +2067,8 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
           }
           break;
         case 'preference':
-          if (!settingsOpen || typeof value?.key !== 'string') break;
+          if (typeof value?.key !== 'string' ||
+              (!settingsOpen && !(value.key === 'theme' && showingHome() && !privateMode))) break;
           if (['homePage', 'startupPages'].includes(value.key) ||
               (privateMode && ['promptDownloads', 'startup', 'spellcheck', 'spellLanguages', 'memorySaver', 'memoryIdle', 'memoryExceptions'].includes(value.key))) break;
           try {
@@ -1967,7 +2079,6 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
             status = value.key === 'memoryExceptions' && !error.code ? error.message : 'Не удалось сохранить настройки.';
           }
           for (const owner of windows) {
-            owner.updateCaption();
             owner.updateMemoryTimer();
             owner.historyChanged();
           }
@@ -1999,6 +2110,15 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
       return !closed && event.sender === chrome.webContents && event.senderFrame === chrome.webContents.mainFrame &&
         event.senderFrame?.url === shellURL;
     }
+
+    chrome.webContents.ipc.on('browser:appearance', (event) => {
+      if (!fromShell(event)) { event.returnValue = null; return; }
+      event.returnValue = appearance();
+    });
+    chrome.webContents.ipc.on('browser:caption', (event, color, symbolColor) => {
+      const validColor = (value) => typeof value === 'string' && /^#[\da-f]{6}$/i.test(value);
+      if (fromShell(event) && validColor(color) && validColor(symbolColor)) window.setTitleBarOverlay({ color, symbolColor });
+    });
 
     chrome.webContents.ipc.handle('browser:home', async (event, action, value) => {
       if (!fromShell(event)) return { ok: false };
@@ -2098,7 +2218,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
       } catch { return { ok: false, message: 'Не удалось сохранить настройки перевода.' }; }
     });
 
-    chrome.webContents.ipc.handle('browser:extensions', async (event, action, id, page) => {
+    chrome.webContents.ipc.handle('browser:extensions', async (event, action, id, page, anchor) => {
       if (!fromShell(event) || toolPage !== 'extensions' || privateMode) return { ok: false };
       const epoch = extensionEpoch;
       const valid = () => !closed && toolPage === 'extensions' && epoch === extensionEpoch;
@@ -2117,6 +2237,13 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
             } finally { choosingExtension = false; }
             break;
           }
+          case 'store': {
+            if (extensionDownload) return { ok: false, message: 'Пакет уже скачивается.' };
+            extensionDownload = new AbortController();
+            try { result = await extensions.previewStore(id, owner, valid, extensionDownload.signal); }
+            finally { extensionDownload = undefined; }
+            break;
+          }
           case 'cancel': await extensions.cancel(owner); break;
           case 'install': await extensions.install(id, owner, valid); break;
           case 'enable':
@@ -2125,13 +2252,18 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
           case 'open': {
             const url = extensions.page(id, page);
             if (!url) throw new Error('Страница расширения недоступна.');
-            createTab(url, true, new URL(url).hostname);
+            if (page === 'action') void extensionPanel.show(anchor, id);
+            else createTab(url, true, new URL(url).hostname);
             break;
           }
           default: return { ok: false };
         }
+        if (['install', 'enable', 'disable', 'remove'].includes(action)) {
+          for (const other of windows) other.extensionsChanged();
+        }
         return { ok: true, result };
       } catch (error) {
+        if (!valid()) return { ok: true };
         return { ok: false, message: error.message };
       }
     });
@@ -2145,7 +2277,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     for (const { webContents } of [chrome, passwordPopup]) secureShellView(webContents);
     chrome.webContents.ipc.on('browser:action', onAction);
     window.on('resize', () => layout());
-    window.on('blur', () => credentials.dismiss());
+    window.on('blur', () => { extensionPanel.close(); credentials.dismiss(); });
     window.on('focus', () => {
       if (!active || closed) return;
       layout();
@@ -2178,11 +2310,12 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
       shellMicrophones.delete(chromeId);
       closed = true;
       windows.delete(owner);
+      extensionPanel.close();
       if (tabDrag?.owner === owner) tabDrag = undefined;
       if (!privateMode && !quitting) saveSession();
-      nativeTheme.removeListener('updated', updateCaption);
       login?.abort();
       readerTranslation?.abort();
+      extensionDownload?.abort();
       void extensions.cancel(owner);
       if (privateMode) {
         windowDownloads.close();
@@ -2230,6 +2363,7 @@ function profileRuntime(profileId, registry, openProfile, updateProfileWindows) 
     beforeQuit() {
       quitting = true;
       widgets.close();
+      shortcutIcons.abort();
       saveSession(true);
     },
   };

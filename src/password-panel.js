@@ -13,7 +13,8 @@ function panelButton(label, action, value, primary = false) {
   return actionButton(label, () => sendPanel(action, value), primary ? 'action primary' : 'action');
 }
 
-window.bro2Panel.onPanel((panel, focus) => {
+window.bro2Panel.onPanel((panel, focus, style) => {
+  window.applyTheme(style);
   passwordPanel.hidden = !panel;
   if (!panel) {
     passwordPanel.replaceChildren();

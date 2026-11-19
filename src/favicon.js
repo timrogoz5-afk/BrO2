@@ -1,8 +1,14 @@
 const imageTypes = new Set([
   'image/png', 'image/jpeg', 'image/gif', 'image/webp', 'image/avif', 'image/svg+xml',
-  'image/x-icon', 'image/vnd.microsoft.icon',
+  'image/x-icon', 'image/vnd.microsoft.icon', 'image/ico',
 ]);
 const maxIconBytes = 64 * 1024;
+
+function faviconData(value) {
+  if (typeof value !== 'string' || value.length > 4 * Math.ceil(maxIconBytes / 3) + 48) return '';
+  const match = /^data:([^;,]+);base64,[a-z\d+/]+={0,2}$/i.exec(value);
+  return match && imageTypes.has(match[1].toLowerCase()) ? value : '';
+}
 
 async function readFavicon(session, candidates, signal) {
   const timeout = AbortSignal.any([signal, AbortSignal.timeout(3500)]);
@@ -39,4 +45,4 @@ async function readFavicon(session, candidates, signal) {
   return '';
 }
 
-module.exports = { readFavicon };
+module.exports = { readFavicon, faviconData };

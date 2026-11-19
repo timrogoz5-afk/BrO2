@@ -54,9 +54,20 @@ async function weather(city, signal) {
   const location = JSON.parse((await download(search.href, signal, 64 * 1024)).text).results?.[0];
   if (!location) throw new Error('Город не найден.');
   const forecast = new URL('https://api.open-meteo.com/v1/forecast');
-  forecast.search = new URLSearchParams({ latitude: location.latitude, longitude: location.longitude, current: 'temperature_2m,weather_code' });
+  forecast.search = new URLSearchParams({ latitude: location.latitude, longitude: location.longitude, timezone: 'auto',
+    current: 'temperature_2m,weather_code,precipitation,apparent_temperature,wind_speed_10m,relative_humidity_2m' });
   const result = JSON.parse((await download(forecast.href, signal, 64 * 1024)).text).current;
   if (!Number.isFinite(result?.temperature_2m)) throw new Error('Температура пока неизвестна.');
-  return { city: [location.name, location.country].filter(Boolean).join(', '), temperature: Math.round(result.temperature_2m), code: result.weather_code };
+  const rounded = (value) => Number.isFinite(value) ? Math.round(value) : null;
+  return {
+    city: [location.name, location.country].filter(Boolean).join(', '),
+    temperature: rounded(result.temperature_2m),
+    code: result.weather_code,
+    precipitation: result.precipitation,
+    feelsLike: rounded(result.apparent_temperature),
+    wind: rounded(result.wind_speed_10m),
+    humidity: rounded(result.relative_humidity_2m),
+    updated: typeof result.time === 'string' ? result.time.match(/T(\d{2}:\d{2})/)?.[1] : null,
+  };
 }
 module.exports = { homeData };

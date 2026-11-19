@@ -6,8 +6,11 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
   <title>BrO2</title>
   <link rel="icon" href="assets/icon.png">
+  <script src="theme.js"></script>
   <link rel="stylesheet" href="style.css">
   <link rel="stylesheet" href="expressive.css">
+  <link rel="stylesheet" href="theme.css">
+  <link rel="stylesheet" href="home.css">
   <script src="icons.js" defer></script>
   <script src="ui.js" defer></script>
   <script src="password-ui.js" defer></script>
@@ -19,6 +22,8 @@
   <script src="site-settings-ui.js" defer></script>
   <script src="settings-ui.js" defer></script>
   <script src="home-layout.js" defer></script>
+  <script src="home-drag.js" defer></script>
+  <script src="home-widgets.js" defer></script>
   <script src="home-ui.js" defer></script>
   <script src="voice-ui.js" defer></script>
 </head>
@@ -44,7 +49,9 @@
         <div id="suggestions" class="suggestions" role="listbox" aria-label="Подсказки адресной строки" hidden></div>
       </form>
       <button id="password-button" class="icon" type="button" title="Пароли (Alt+↓)" aria-label="Пароли" aria-keyshortcuts="Alt+ArrowDown" aria-expanded="false" data-icon="key" hidden></button>
-      <button id="extension-button" class="icon" type="button" title="Расширения" aria-label="Расширения" data-icon="puzzle"></button>
+      <button id="extension-store-button" class="action" type="button" hidden>Установить в BrO2</button>
+      <div id="pinned-extensions" aria-label="Закреплённые расширения" hidden></div>
+      <button id="extension-button" class="icon" type="button" title="Расширения" aria-label="Расширения" aria-haspopup="dialog" aria-expanded="false" data-icon="puzzle"></button>
       <button id="settings" class="icon" type="button" title="Настройки (Ctrl+,)" aria-label="Настройки" aria-controls="settings-panel" aria-expanded="false" data-icon="settings"></button>
       <button id="browser-menu" class="icon" type="button" title="Меню браузера (Alt+F)" aria-label="Меню браузера" aria-keyshortcuts="Alt+f" aria-haspopup="menu" aria-expanded="false" data-icon="menu"></button>
     </div>
@@ -54,9 +61,13 @@
   <main>
     <section id="home" class="home">
       <div id="home-editor" class="home-editor" hidden>
-        <div class="home-editor-title"><strong>Настройка новой вкладки</strong><small>Перетаскивай элементы или используй стрелки на их кнопках.</small></div>
+        <div class="home-editor-title"><strong>Настройка новой вкладки</strong><small>Перемещайте блоки за ручки или стрелками.</small></div>
         <div class="vault-actions">
+          <select id="home-theme" aria-label="Тема">
+            <option value="dark">Тёмная тема</option><option value="light">Светлая тема</option><option value="system">Системная тема</option>
+          </select>
           <button id="home-options-open" class="action" type="button" data-icon="settings">Виджеты и обои</button>
+          <button id="home-snap" class="action" type="button" data-icon="grid" aria-pressed="false">По сетке</button>
           <button id="home-preview" class="action" type="button">Предпросмотр</button>
           <button id="home-reset" class="action" type="button">Сбросить</button>
           <button id="home-cancel" class="action" type="button">Отмена</button>
@@ -64,50 +75,64 @@
         </div>
       </div>
       <p class="sr-only" id="home-announcement" role="status"></p>
-      <div id="home-grid">
-        <div class="home-tile home-logo" data-widget="logo">
-          <h1><img class="wordmark" src="assets/wordmark.png" alt="BrO2" width="2014" height="781"></h1>
-        </div>
-        <div class="home-tile home-search" data-widget="search">
-          <form id="search-form" class="field search">
-            <span class="field-icon" data-icon="search" aria-hidden="true"></span>
-            <input id="search" placeholder="Поиск или адрес сайта" aria-label="Поиск или адрес сайта" spellcheck="false" autocomplete="off">
-            <button id="home-microphone" type="button" class="icon" aria-pressed="false" aria-label="Голосовой ввод · на устройстве" title="Голосовой ввод · на устройстве" data-icon="mic"></button>
-            <button id="home-chatgpt" type="button" class="icon" aria-label="Открыть ChatGPT в новой вкладке" title="Открыть ChatGPT в новой вкладке" data-icon="chat"></button>
-            <button id="search-enter" type="submit" class="icon" aria-label="Поиск" title="Поиск (Enter)" data-icon="enter"></button>
-          </form>
-          <p id="home-voice-status" role="status" hidden></p>
-        </div>
-        <section class="home-tile home-card home-shortcuts" data-widget="shortcuts" aria-labelledby="shortcuts-label">
-          <h2 id="shortcuts-label" data-icon="star">Ярлыки</h2>
-          <div id="shortcuts" class="shortcuts" aria-label="Ярлыки сайтов"></div>
-        </section>
-        <section class="home-tile home-card home-clock" data-widget="clock" aria-labelledby="clock-label">
-          <h2 id="clock-label" data-icon="clock">Местное время</h2>
-          <div id="clock-face"><i aria-hidden="true"></i><i aria-hidden="true"></i><time id="clock-value">—</time></div>
-        </section>
-        <section class="home-tile home-card home-date" data-widget="date" aria-label="Дата">
-          <span data-icon="calendar"></span><time id="date-value">—</time>
-        </section>
-        <section class="home-tile home-card home-weather" data-widget="weather" hidden>
-          <h2 data-icon="cloud">Погода</h2><div id="widget-weather" class="widget-body"></div>
-        </section>
-        <section class="home-tile home-card home-media" data-widget="media" hidden>
-          <h2 data-icon="music">Медиаплеер</h2>
-          <div class="widget-body">
-            <span id="widget-media" role="status">Управление аудио и видео в открытых вкладках.</span>
-            <div class="vault-actions">
-              <button class="action primary" type="button" data-home-media="toggle" data-icon="play">Пуск / пауза</button>
-              <button class="action" type="button" data-home-media="tab" data-icon="external">К вкладке</button>
-            </div>
+      <div id="home-viewport">
+        <div id="home-grid" role="region" aria-label="Рабочая область">
+          <div class="home-tile home-logo" data-widget="logo">
+            <h1><span class="wordmark-anchor"><span class="wordmark" role="img" aria-label="BrO2"></span></span></h1>
+            <div class="logo-caption" data-tile-title hidden></div>
           </div>
-        </section>
-        <section class="home-tile home-card home-news" data-widget="news" hidden>
-          <h2 data-icon="news">Новости BBC News</h2><div id="widget-news" class="widget-body feed-list" aria-live="polite"></div>
-        </section>
-        <section class="home-tile home-card home-feed" data-widget="feed" hidden>
-          <h2 data-icon="rss">RSS и Atom</h2><div id="widget-feed" class="widget-body feed-list" aria-live="polite"></div>
-        </section>
+          <div class="home-tile home-search" data-widget="search">
+            <h2 class="search-label" data-tile-title hidden>Поиск</h2>
+            <form id="search-form" class="field search">
+              <span class="field-icon" data-icon="search" aria-hidden="true"></span>
+              <input id="search" placeholder="Поиск или адрес сайта" aria-label="Поиск или адрес сайта" spellcheck="false" autocomplete="off">
+              <button id="home-microphone" type="button" class="icon" aria-pressed="false" aria-label="Голосовой ввод · на устройстве" title="Голосовой ввод · на устройстве" data-icon="mic"></button>
+              <button id="home-chatgpt" type="button" class="icon" aria-label="Открыть ChatGPT в новой вкладке" title="Открыть ChatGPT в новой вкладке" data-icon="chat"></button>
+              <button id="search-enter" type="submit" class="icon" aria-label="Поиск" title="Поиск (Enter)" data-icon="enter"></button>
+            </form>
+            <p id="home-voice-status" role="status" hidden></p>
+          </div>
+          <section class="home-tile home-card home-shortcuts" data-widget="shortcuts" aria-labelledby="shortcuts-label">
+            <h2 id="shortcuts-label" data-icon="star"><span data-tile-title>Ярлыки</span><small id="shortcut-count" class="tile-detail"></small></h2>
+            <div id="shortcuts" class="shortcuts" aria-label="Ярлыки сайтов"></div>
+            <p id="shortcuts-empty" class="tile-secondary" hidden>Ярлыков пока нет.</p>
+          </section>
+          <section class="home-tile home-card home-clock" data-widget="clock" aria-labelledby="clock-label">
+            <h2 id="clock-label" data-icon="clock"><span data-tile-title>Местное время</span></h2>
+            <div class="clock-readout">
+              <div id="clock-face" aria-hidden="true"><i></i><i></i><i></i></div>
+              <div class="clock-text">
+                <div class="clock-line"><time id="clock-value">—</time><span id="clock-period" hidden></span></div>
+                <span id="clock-date"></span>
+                <span id="clock-zone" class="tile-detail"></span>
+              </div>
+            </div>
+          </section>
+          <section class="home-tile home-card home-date" data-widget="date" aria-label="Дата">
+            <h2 data-icon="calendar"><span data-tile-title>Дата</span></h2><time id="date-value">—</time>
+          </section>
+          <section class="home-tile home-card home-weather" data-widget="weather" hidden>
+            <h2 data-icon="cloud"><span data-tile-title>Погода</span></h2><div id="widget-weather" class="widget-body" aria-live="polite"></div>
+          </section>
+          <section class="home-tile home-card home-media" data-widget="media" hidden>
+            <h2 data-icon="music"><span data-tile-title>Медиаплеер</span></h2>
+            <div class="widget-body">
+              <strong id="widget-media" class="tile-primary" role="status">Нет активного медиа</strong>
+              <div id="widget-media-details" class="tile-secondary"></div>
+              <div class="vault-actions">
+                <button class="action primary" type="button" data-home-media="toggle" data-icon="play"><span>Воспроизвести</span></button>
+                <button class="action" type="button" data-home-media="tab" data-icon="external">К вкладке</button>
+              </div>
+              <span id="widget-media-message" class="tile-state" role="status" hidden></span>
+            </div>
+          </section>
+          <section class="home-tile home-card home-news" data-widget="news" hidden>
+            <h2 data-icon="news"><span data-tile-title>Новости BBC News</span></h2><div id="widget-news" class="widget-body feed-list" aria-live="polite"></div>
+          </section>
+          <section class="home-tile home-card home-feed" data-widget="feed" hidden>
+            <h2 data-icon="rss"><span data-tile-title>RSS и Atom</span></h2><div id="widget-feed" class="widget-body feed-list" aria-live="polite"></div>
+          </section>
+        </div>
       </div>
     </section>
     <button id="customize" class="action customize" type="button" data-icon="palette">Настроить</button>
@@ -200,8 +225,13 @@
         <button id="clear-data-submit" class="action primary" type="submit" disabled>Удалить выбранное</button>
       </form>
       <div id="extension-page" class="settings-group" hidden>
-        <button id="extension-add" class="action primary" type="button" data-icon="plus">Добавить из папки</button>
-        <p class="muted">Нужна папка распакованного расширения с файлом manifest.json. Electron поддерживает часть API Chrome.</p>
+        <form id="extension-store-form">
+          <label for="extension-store-url">Ссылка на расширение в Chrome Web Store</label>
+          <input id="extension-store-url" type="url" placeholder="https://chromewebstore.google.com/detail/…" maxlength="4096" autocomplete="off" required>
+          <button id="extension-store-submit" class="action primary" type="submit">Проверить пакет</button>
+        </form>
+        <button id="extension-add" class="action" type="button" data-icon="plus">Добавить из папки</button>
+        <p class="muted">BrO2 поддерживает часть API Chrome. Возможности установленных расширений зависят от этих API.</p>
         <p id="extension-status" class="muted" role="status" hidden></p>
         <ul id="extension-list" class="vault-list"></ul>
       </div>
@@ -412,6 +442,7 @@
             <option value="yandex">Яндекс</option>
             <option value="duckduckgo">DuckDuckGo</option>
             <option value="bing">Bing</option>
+            <option value="perplexity">Perplexity</option>
           </select>
         </label>
         <div class="setting-row"><span data-icon="history">История подсказок</span><button id="clear-history" class="action" type="button" data-icon="trash">Очистить</button></div>
@@ -441,7 +472,7 @@
       </section>
       <section id="extension-settings" class="settings-group">
         <h2 data-icon="puzzle">Управление расширениями</h2>
-        <div class="setting-row"><span>Подключать расширения из папки и управлять доступом</span><button class="action" type="button" data-setting-tool="extensions">Открыть</button></div>
+        <div class="setting-row"><span>Добавлять расширения из Chrome Web Store или папки</span><button class="action" type="button" data-setting-tool="extensions">Открыть</button></div>
       </section>
       <p id="settings-status" class="muted" role="status" hidden></p>
       </div>
@@ -453,25 +484,17 @@
     </div>
     <h3>Обои</h3><div id="home-wallpapers" class="wallpaper-gallery"></div>
     <h3>Элементы на странице</h3><div id="home-widgets" class="widget-picker"></div>
-    <label class="setting-row"><span>Стиль часов</span><select data-home-field="clock">
-      <option value="digital">Цифровые</option><option value="digital-compact">Цифровые компактные</option>
-      <option value="analog">Аналоговые</option><option value="analog-dial">Аналоговые с делениями</option>
-    </select></label>
-    <label>Город для погоды (Open-Meteo)<input data-home-field="city" maxlength="100" placeholder="Москва"></label>
-    <label class="setting-row"><span>Раздел новостей BBC News</span>
-      <select data-home-field="news"><option value="technology">Технологии</option><option value="world">Мир</option></select></label>
-    <label>Адрес RSS или Atom<input type="url" data-home-field="feed" maxlength="2048" placeholder="https://example.com/feed.xml"></label>
-    <h3>Ярлыки</h3>
-    <label class="setting-row"><span>Размер</span><select data-home-field="shortcutSize">
-      <option value="small">Маленький</option><option value="medium">Средний</option><option value="large">Большой</option>
-    </select></label>
-    <label class="setting-row"><span>Форма</span><select data-home-field="shortcutShape">
-      <option value="soft">Скруглённая</option><option value="circle">Круглая</option><option value="square">Квадратная</option>
-    </select></label>
-    <label class="setting-row"><span>Показывать значки</span><input type="checkbox" role="switch" data-home-field="shortcutIcon"></label>
-    <label class="setting-row"><span>Показывать названия</span><input type="checkbox" role="switch" data-home-field="shortcutTitle"></label>
-    <ol id="home-shortcut-order" class="vault-list"></ol>
   </dialog>
+  <aside id="tile-options" popover="manual" role="dialog" aria-labelledby="tile-options-title">
+    <div class="settings-header"><h2 id="tile-options-title">Настройки блока</h2>
+      <button id="tile-options-close" class="icon" type="button" data-icon="close" aria-label="Закрыть"></button>
+    </div>
+    <div id="tile-options-fields"></div>
+    <div class="vault-actions tile-options-actions">
+      <button id="tile-options-reset" class="action" type="button">Сбросить настройки</button>
+      <button id="tile-options-preview" class="action primary" type="button">Предпросмотр</button>
+    </div>
+  </aside>
   <dialog id="extension-review" aria-labelledby="extension-review-title">
     <h2 id="extension-review-title">Добавить расширение?</h2>
     <p><strong id="extension-review-name"></strong></p>

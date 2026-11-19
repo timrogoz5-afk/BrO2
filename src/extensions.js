@@ -2,9 +2,11 @@ const fs = require('node:fs/promises');
 const path = require('node:path');
 const { createHash, randomUUID } = require('node:crypto');
 const { atomicJSON } = require('./password-vault');
+const { download, storeListing, unpackStorePackage } = require('./extension-store');
 
 const localId = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/;
 const chromeId = /^[a-p]{32}$/;
+const unavailablePermissions = ['contextMenus', 'cookies', 'fontSettings', 'gcm', 'identity', 'notifications', 'sidePanel', 'tts'];
 const within = (root, item) => {
   const relative = path.relative(root, item);
   return relative === '' || (!relative.startsWith('..' + path.sep) && relative !== '..' && !path.isAbsolute(relative));
@@ -12,9 +14,9 @@ const within = (root, item) => {
 const strings = (list) => Array.isArray(list) ? list.filter((item) => typeof item === 'string') : [];
 
 function unavailableAPIs(manifest) {
-  const unavailable = [];
   const permissions = [...strings(manifest.permissions), ...strings(manifest.optional_permissions)];
-  if (permissions.includes('fontSettings')) unavailable.push('chrome.fontSettings');
+  const unavailable = unavailablePermissions.filter((permission) => permissions.includes(permission))
+    .map((permission) => `chrome.${permission}`);
   if (manifest.commands && Object.keys(manifest.commands).length) unavailable.push('chrome.commands');
   return unavailable;
 }
@@ -100,10 +102,32 @@ async function snapshot(source, target) {
   });
 }
 
+async function extensionIcon(extension) {
+  const icons = extension.manifest.action?.default_icon ?? extension.manifest.browser_action?.default_icon ??
+    extension.manifest.icons;
+  const candidates = typeof icons === 'string' ? [icons] :
+    Object.entries(icons || {}).sort(([a], [b]) => Math.abs(Number(a) - 32) - Math.abs(Number(b) - 32)).map(([, value]) => value);
+  for (const candidate of candidates) {
+    if (typeof candidate !== 'string' || !candidate.toLowerCase().endsWith('.png')) continue;
+    try {
+      const file = await fs.realpath(path.resolve(extension.path, candidate));
+      if (!within(extension.path, file)) continue;
+      const stat = await fs.stat(file);
+      if (!stat.isFile() || stat.size < 24 || stat.size > 64 * 1024) continue;
+      const data = await fs.readFile(file);
+      if (data.subarray(0, 8).toString('hex') !== '89504e470d0a1a0a' || data.length < 24 ||
+          data.readUInt32BE(16) > 512 || data.readUInt32BE(20) > 512) continue;
+      return 'data:image/png;base64,' + data.toString('base64');
+    } catch { /* Optional icon. */ }
+  }
+  return '';
+}
+
 function extensionManager(profile, api, closePages) {
   const root = path.join(profile, 'brO2-extensions');
   const registry = path.join(profile, 'extensions.json');
   const errors = new Map();
+  const images = new Map();
   let entries = [];
   let pending;
   let timer;
@@ -148,10 +172,13 @@ function extensionManager(profile, api, closePages) {
     const current = await readManifest(installed);
     if (current.fingerprint !== record.fingerprint) throw new Error('Манифест изменился. Удали расширение и добавь его снова.');
     if (current.chromeId && api.getExtension(current.chromeId)) throw new Error('Расширение с таким идентификатором уже загружено.');
-    return open(record);
+    const live = await open(record);
+    images.set(record.id, await extensionIcon(live));
+    return live;
   }
 
   function unload(id) {
+    images.delete(id);
     const item = runtime(id);
     if (!item) return;
     api.removeExtension(item.id);
@@ -168,14 +195,46 @@ function extensionManager(profile, api, closePages) {
   }
 
   function view() {
-    return entries.map(({ id, name, version, description }) => {
+    return entries.map(({ id, name, version, description, pinned }) => {
       const live = runtime(id);
       const declaredPages = pages(id);
       return {
         id, name: live?.name || name, version, description: live?.manifest.description || description,
         enabled: Boolean(live), error: errors.get(id), action: Boolean(declaredPages.action),
-        options: Boolean(declaredPages.options), unavailable: live ? unavailableAPIs(live.manifest) : [],
+        pinned: pinned === true, image: images.get(id), options: Boolean(declaredPages.options),
+        unavailable: live ? unavailableAPIs(live.manifest) : [],
       };
+    });
+  }
+
+  function stage(owner, valid, prepare, copyError) {
+    return enqueue(async () => {
+      if (broken) throw broken;
+      if (!valid()) return null;
+      if (pending && pending.owner !== owner) throw new Error('Заверши добавление расширения в другом окне.');
+      await discard(owner);
+      const id = randomUUID();
+      try {
+        await fs.mkdir(root, { recursive: true });
+        await prepare(folder(id));
+        const { fingerprint, chromeId: declared, ...details } = await readManifest(folder(id));
+        if (entries.some((item) => item.fingerprint === fingerprint || (declared && item.chromeId === declared))) {
+          throw new Error('Это расширение уже добавлено.');
+        }
+        if (!valid()) {
+          await removeFolder(id);
+          return null;
+        }
+        pending = { id, owner, fingerprint, chromeId: declared, ...details };
+        timer = setTimeout(() => void enqueue(() => { if (pending?.id === id) return discard(owner); }), 5 * 60_000);
+        timer.unref();
+        return { id, ...details };
+      } catch (error) {
+        await removeFolder(id).catch(() => {});
+        if (!valid()) return null;
+        if (error.code) throw new Error(copyError);
+        throw error;
+      }
     });
   }
 
@@ -205,38 +264,37 @@ function extensionManager(profile, api, closePages) {
       if (broken) throw broken;
       return view();
     }),
-    preview: (directory, owner, valid) => enqueue(async () => {
-      if (broken) throw broken;
-      if (!valid()) return null;
-      if (pending && pending.owner !== owner) throw new Error('Заверши добавление расширения в другом окне.');
-      await discard(owner);
+    pinned: () => entries.filter(({ pinned }) => pinned === true).flatMap(({ id, name }) => {
+      const live = runtime(id);
+      return live && (live.manifest.action?.default_popup || live.manifest.browser_action?.default_popup)
+        ? [{ id, name: live.name || name, image: images.get(id) }] : [];
+    }),
+    togglePin: (id, valid) => enqueue(async () => {
+      const record = entries.find((item) => item.id === id);
+      if (!record || !valid() || !pages(id).action) return;
+      await save(entries.map((item) => item === record ? { ...item, pinned: !item.pinned } : item));
+    }),
+    preview: (directory, owner, valid) => stage(owner, valid, async (target) => {
       let source;
       try { source = await fs.realpath(directory); }
       catch { throw new Error('Не удалось открыть выбранную папку.'); }
       if (within(source, root) || within(root, source)) throw new Error('Выбери распакованное расширение вне хранилища BrO2.');
       await readManifest(source);
-      const id = randomUUID();
-      try {
-        await fs.mkdir(root, { recursive: true });
-        await snapshot(source, folder(id));
-        const { fingerprint, chromeId: declared, ...details } = await readManifest(folder(id));
-        if (entries.some((item) => item.fingerprint === fingerprint || (declared && item.chromeId === declared))) {
-          throw new Error('Это расширение уже добавлено.');
-        }
-        if (!valid()) {
-          await removeFolder(id);
-          return null;
-        }
-        pending = { id, owner, fingerprint, chromeId: declared, ...details };
-        timer = setTimeout(() => void enqueue(() => { if (pending?.id === id) return discard(owner); }), 5 * 60_000);
-        timer.unref();
-        return { id, ...details };
-      } catch (error) {
-        await removeFolder(id).catch(() => {});
-        if (error.code) throw new Error('Не удалось скопировать выбранную папку.');
-        throw error;
-      }
-    }),
+      await snapshot(source, target);
+    }, 'Не удалось скопировать выбранную папку.'),
+    async previewStore(url, owner, valid, signal) {
+      const id = storeListing(url);
+      if (!id) throw new Error('Вставь ссылку на страницу расширения в Chrome Web Store.');
+      const conflict = await enqueue(() => {
+        if (broken) throw broken;
+        return entries.some((entry) => entry.chromeId === id);
+      });
+      if (conflict) throw new Error('Это расширение уже добавлено.');
+      if (!valid()) return null;
+      const crx = await download(id, process.versions.chrome, signal);
+      return stage(owner, valid, (target) => unpackStorePackage(crx, id, target, signal),
+        'Не удалось сохранить файлы расширения.');
+    },
     cancel: (owner) => enqueue(() => discard(owner)),
     install: (id, owner, valid) => enqueue(async () => {
       if (typeof id !== 'string' || id !== pending?.id || owner !== pending.owner || !valid()) {

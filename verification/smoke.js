@@ -144,7 +144,7 @@ async function run() {
     await wait('!state.settingsOpen', 'Settings back');
     await screenshot('new-tab-light');
     await app.chrome.call('Emulation.setDeviceMetricsOverride',{width:560,height:640,deviceScaleFactor:1.5,mobile:false});
-    assert.equal(await evaluate('getComputedStyle(document.querySelector("#home-grid")).display'), 'flex');
+    await wait('getComputedStyle(document.querySelector("#home-grid")).display === "flex"', 'Narrow layout');
     const narrow = await geometry();
     assert.equal(narrow.top, narrow.right);
     assert.equal(narrow.w, narrow.height);
@@ -152,23 +152,28 @@ async function run() {
     await app.chrome.call('Emulation.clearDeviceMetricsOverride');
 
     phase = 'home layout, keyboard, preview and Atom';
+    const startY = await evaluate('state.home.tiles.search.y');
     await click('#customize');
     assert(await evaluate('document.querySelector("#home").classList.contains("is-editing")'));
     await evaluate(`document.querySelector('[data-widget=search] .tile-move')
       .dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowDown',bubbles:true}))`);
-    const moved = await evaluate('document.querySelector("[data-widget=search]").style.getPropertyValue("--tile-row")');
-    assert.equal(moved, '4 / span 1');
+    const moved = await evaluate('parseFloat(document.querySelector("[data-widget=search]").style.getPropertyValue("--tile-y"))');
+    assert.equal(moved, startY + 1);
     await click('#home-options-open');
     await click('[data-wallpaper="coast"]');
     await click('[data-home-toggle="feed"]');
+    await click('#home-options-close');
+    await click('[data-widget="feed"] .tile-options');
     await evaluate(`const f=document.querySelector('[data-home-field=feed]'); f.value=${JSON.stringify(origin+'/feed.xml')}; f.dispatchEvent(new Event('change'));`);
+    await click('#tile-options-close');
+    await click('[data-widget="shortcuts"] .tile-options');
     await click('[data-home-field="shortcutIcon"]');
     await click('[data-home-field="shortcutTitle"]');
-    await click('#home-options-close');
+    await click('#tile-options-close');
     await click('#home-preview');
     assert.equal(await evaluate('document.querySelector("#home").classList.contains("is-editing")'), false);
     await click('#home-save');
-    await wait('state.home.wallpaper === "coast" && !state.home.shortcutIcon && !state.home.shortcutTitle && state.home.tiles.search.y === 3', 'Saved home customization');
+    await wait('state.home.wallpaper === "coast" && !state.home.shortcutIcon && !state.home.shortcutTitle && state.home.tiles.search.y === ' + moved, 'Saved home customization');
     assert(await evaluate('document.querySelector(".shortcut-open").getAttribute("aria-label")'));
     await evaluate('document.querySelector("[data-widget=feed]").scrollIntoView()');
     await wait('document.querySelector("#widget-feed").textContent.includes("Atom в BrO2")', 'Local Atom feed');

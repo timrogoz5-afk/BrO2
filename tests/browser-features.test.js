@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { shortcutCommand } = require('../src/shortcuts');
 const { extensionPage } = require('../src/extensions');
+const { storeListing } = require('../src/extension-store');
 const { downloads } = require('../src/browser-tools');
 const { sessionState } = require('../src/session-state');
 const { permissionContext, permissionTypes, updateSiteRules } = require('../src/site-permissions');
@@ -42,6 +43,21 @@ test('extension manifest pages remain inside the owning extension scheme and hos
   assert.equal(extensionPage(id, 'popup.html?theme=dark#options'), `chrome-extension://${id}/popup.html?theme=dark#options`);
   for (const value of ['file:///C:/secret.html', 'https://example.test/page.html', 'data:text/html,Hello',
     '//different-id/x.html', 'script.js', '../test.json']) assert.equal(extensionPage(id, value), null, value);
+});
+
+test('store installation accepts only HTTPS Chrome Web Store extension listings', () => {
+  const id = 'oeopbcgkkoapgobdbedcemjljbihmemj';
+  const base = 'https://chromewebstore.google.com';
+  assert.equal(storeListing(`${base}/detail/checker-plus-for-gmail/${id}?hl=ru`), id);
+  assert.equal(storeListing(`${base}/detail/${id}/`), id);
+  for (const url of [
+    `http://chromewebstore.google.com/detail/${id}`,
+    `https://chromewebstore.google.com.example.test/detail/${id}`,
+    `https://example.test@chromewebstore.google.com/detail/${id}`,
+    `${base}/search?q=${id}`,
+    `${base}/detail/${id}/extra/path`,
+    `${base}/detail/${'z'.repeat(32)}`,
+  ]) assert.equal(storeListing(url), null, url);
 });
 
 test('downloads preserve existing files and reserve distinct names across sessions', async (t) => {

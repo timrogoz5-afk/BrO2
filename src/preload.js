@@ -1,6 +1,8 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('bro2', {
+  appearance: ipcRenderer.sendSync('browser:appearance'),
+  setCaption: (color, symbolColor) => ipcRenderer.send('browser:caption', color, symbolColor),
   send: (action, value) => ipcRenderer.send('browser:action', action, value),
   onState: (callback) => ipcRenderer.on('browser:state', (_event, state) => callback(state)),
   onFocus: (callback) => ipcRenderer.on('browser:focus', () => callback()),
@@ -14,7 +16,8 @@ contextBridge.exposeInMainWorld('bro2', {
   localProfiles: (action, value) => ipcRenderer.invoke('browser:local-profiles', action, value),
   searchEngine: (action, value) => ipcRenderer.invoke('browser:search-engine', action, value),
   translationSettings: (value) => ipcRenderer.invoke('browser:translation-settings', value),
-  extensions: (action, id, page) => ipcRenderer.invoke('browser:extensions', action, id, page),
+  extensions: (action, id, page, anchor) => ipcRenderer.invoke('browser:extensions', action, id, page, anchor),
+  onExtensionFocus: (callback) => ipcRenderer.on('browser:extension-focus', (_event, id) => callback(id)),
   onZoom: (callback) => ipcRenderer.on('browser:zoom', (_event, level) => callback(level)),
   onMenuState: (callback) => ipcRenderer.on('browser:menu-state', (_event, open) => callback(open)),
   onDownloads: (callback) => ipcRenderer.on('browser:downloads', (_event, items) => callback(items)),

@@ -16,6 +16,11 @@ if (process.isMainFrame && location.protocol === 'https:') {
   let dismissed = '';
   let chosen = false;
   let observer;
+  let ready = false;
+  let suggestionObserver;
+  let suggestionTimer;
+  let suggestionDeadline;
+  let submissionId;
 
   function destination(form, submitter) {
     const action = submitter?.hasAttribute('formaction') ? submitter.formAction : form.action;
@@ -30,17 +35,18 @@ if (process.isMainFrame && location.protocol === 'https:') {
     } catch { return null; }
   }
 
-  function identify(form) {
+  function identify(form, allowScript = false) {
     if (!(form instanceof HTMLFormElement) || !form.isConnected) return null;
     const elements = [...form.elements];
     const action = destination(form);
-    if (!action || action.method !== 'post') return null;
+    const accepts = (result) => result && (result.method === 'post' || (allowScript && result.method === 'get'));
+    if (!accepts(action)) return null;
     const images = [...document.querySelectorAll('input[type=image]')].filter((element) => element.form === form);
     const submitActions = [];
     for (const element of [...elements, ...images]) {
       if (!['submit', 'image'].includes(element.type) || element.matches(':disabled')) continue;
       const result = destination(form, element);
-      if (!result || result.method !== 'post') return null;
+      if (!accepts(result)) return null;
       submitActions.push(result.url);
     }
 
@@ -79,16 +85,17 @@ if (process.isMainFrame && location.protocol === 'https:') {
     observer?.disconnect();
   }
 
-  function inspect(field, open = false, focus = false) {
+  function inspect(field, open = false, focus = false, automatic = false) {
     const found = field instanceof HTMLInputElement && identify(field.form);
     if (!found || (field !== found.username && field !== found.password && !found.newFields.includes(field))) {
       clear();
       return;
     }
     lastField = field;
+    stopSuggestions();
     const username = found.username?.value || '';
-    if (!sameForm(current, found) || (current.field !== field && open)) {
-      current = { ...found, id: crypto.randomUUID(), field };
+    if (!sameForm(current, found) || (open && (current.field !== field || current.automatic !== automatic))) {
+      current = { ...found, id: crypto.randomUUID(), field, automatic };
     }
     current.userValue = username;
     current.passwordValue = found.password?.value;
@@ -111,25 +118,68 @@ if (process.isMainFrame && location.protocol === 'https:') {
       inspect(field, force, focus);
       if (current) return;
     }
-    const forms = [...document.forms].map(identify).filter(Boolean);
+    const forms = [...document.forms].map((form) => identify(form)).filter(Boolean);
     if (forms.length === 1) {
       const form = forms[0];
       inspect(form.password || form.newFields[0] || form.username, force, focus);
     } else ipcRenderer.send('password:no-form', documentId);
   }
 
-  function reportDocument() {
+  function submissionResult() {
     const passwordVisible = [...document.querySelectorAll('input[type=password]')].some(visible);
     const codeVisible = [...document.querySelectorAll('input[autocomplete]')].some((field) => isCode(field) && visible(field));
     const errorVisible = [...document.querySelectorAll('[role=alert], [aria-invalid=true]')]
       .some((element) => visible(element) && (element.matches('input') || element.textContent.trim()));
-    ipcRenderer.send('password:result', { documentId, passwordVisible, codeVisible, errorVisible });
+    return { passwordVisible, codeVisible, errorVisible };
   }
 
+  function stopSuggestions() {
+    suggestionObserver?.disconnect();
+    clearTimeout(suggestionDeadline);
+    clearTimeout(suggestionTimer);
+    suggestionDeadline = suggestionTimer = undefined;
+  }
+
+  function scheduleSuggestion() {
+    if (suggestionDeadline) suggestionTimer ??= setTimeout(suggest, 80);
+  }
+
+  function suggest() {
+    suggestionTimer = undefined;
+    const { errorVisible, codeVisible } = submissionResult();
+    if (errorVisible || codeVisible) return;
+    const forms = [...document.forms].map((form) => identify(form)).filter((form) => form?.kind === 'login' && !form.password.value);
+    if (forms.length !== 1) return;
+    const { password, username } = forms[0];
+    const field = document.activeElement === username ? username : password;
+    const { left, right, top, bottom } = field.getBoundingClientRect();
+    if (right > 0 && bottom > 0 && left < innerWidth && top < innerHeight) inspect(field, true, false, true);
+  }
+
+  function registerDocument() {
+    ready = true;
+    ipcRenderer.send('password:document', documentId);
+  }
+
+  ipcRenderer.on('password:suggest', (_event, id) => {
+    if (!ready || id !== documentId) return;
+    stopSuggestions();
+    suggestionObserver ??= new MutationObserver(scheduleSuggestion);
+    suggestionObserver.observe(document, { childList: true, subtree: true, attributes: true,
+      attributeFilter: ['class', 'style', 'hidden', 'inert', 'type', 'disabled', 'readonly', 'method', 'action'] });
+    suggestionDeadline = setTimeout(stopSuggestions, 15_000);
+    suggest();
+  });
+
   document.addEventListener('focusin', (event) => {
-    if (!chosen) inspect(event.target, true);
+    if (!ready || chosen || (event.target instanceof HTMLButtonElement && current && event.target.form === current.form)) return;
+    inspect(event.target, true);
   }, true);
   document.addEventListener('input', (event) => {
+    if (!chosen && event.isTrusted && current?.password === event.target && event.target.value) {
+      clear();
+      return;
+    }
     if (!chosen && event.isTrusted && event.target === current?.field) inspect(event.target);
   }, true);
   document.addEventListener('keydown', (event) => {
@@ -140,23 +190,44 @@ if (process.isMainFrame && location.protocol === 'https:') {
     } else if (event.key === 'Escape') ipcRenderer.send('password:dismiss', documentId);
   }, true);
   document.addEventListener('submit', (event) => {
-    const form = identify(event.target);
+    const form = identify(event.target, true);
     if (!event.isTrusted || !navigator.userActivation.isActive || !form) return;
     const target = destination(form.form, event.submitter);
-    if (target?.method !== 'post') return;
+    if (!target || !['post', 'get'].includes(target.method)) return;
     const username = form.username?.value || '';
     const password = (form.newFields[0] || form.password)?.value || '';
     if ((!password && form.kind !== 'username') || (form.kind === 'username' && !username) ||
         form.newFields.some((field) => field.value !== password)) return;
-    ipcRenderer.sendSync('password:submitted', { documentId, kind: form.kind, username, password, target: target.url });
+    submissionId = crypto.randomUUID();
+    ipcRenderer.sendSync('password:submitted', {
+      documentId, submissionId, kind: form.kind, username, password, target: target.url,
+    });
   }, true);
-  window.addEventListener('pagehide', clear);
-  window.addEventListener('DOMContentLoaded', () => ipcRenderer.send('password:document', documentId), { once: true });
-  window.addEventListener('pageshow', (event) => {
-    if (event.persisted) ipcRenderer.send('password:document', documentId);
+  window.addEventListener('pagehide', () => {
+    stopSuggestions();
+    submissionId = undefined;
+    ready = false;
+    clear();
   });
-  ipcRenderer.on('password:result-check', (_event, id) => {
-    if (id === documentId) reportDocument();
+  window.addEventListener('DOMContentLoaded', registerDocument, { once: true });
+  window.addEventListener('pageshow', (event) => {
+    if (event.persisted) registerDocument();
+  });
+  ipcRenderer.on('password:result-check', (_event, id, attemptId) => {
+    if (id !== documentId) return;
+    if (!attemptId) {
+      ipcRenderer.send('password:result', { documentId, ...submissionResult() });
+      return;
+    }
+    const until = performance.now() + 5000;
+    const check = () => {
+      if (submissionId !== attemptId) return;
+      const result = submissionResult();
+      if (result.passwordVisible && !result.errorVisible && !result.codeVisible && performance.now() < until) {
+        setTimeout(check, 120);
+      } else ipcRenderer.send('password:result', { documentId, submissionId: attemptId, ...result });
+    };
+    setTimeout(check, 120);
   });
   ipcRenderer.on('password:inspect', () => inspectCurrentField(true, true));
   ipcRenderer.on('password:restore', (_event, id, formId) => {
@@ -169,7 +240,9 @@ if (process.isMainFrame && location.protocol === 'https:') {
 
   function eligible(snapshot, generation) {
     if (!snapshot || current !== snapshot || !sameForm(snapshot, identify(snapshot.form))) return false;
-    if (document.hasFocus() && document.activeElement !== snapshot.field) return false;
+    const focused = document.activeElement;
+    if (document.hasFocus() && focused !== snapshot.field &&
+        !(snapshot.automatic && (focused === document.body || focused === document.documentElement))) return false;
     if (snapshot.username && snapshot.username.value !== snapshot.userValue) return false;
     if (generation) return snapshot.newFields.length && snapshot.newFields.every((field, index) =>
       !field.value && field.value === snapshot.newValues[index]);

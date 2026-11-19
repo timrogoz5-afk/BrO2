@@ -11,8 +11,9 @@ const tabIcons = new WeakMap();
 const selectedTabs = new Set();
 const groupLabels = new Map();
 const pressAnimations = new Map();
+const tabMoves = new Map();
+const tabClosures = new Map();
 const addressScope = /^@(tabs|bookmarks|history)(?:\s+|$)/i;
-const tabDragType = 'application/x-bro2-tab';
 let state;
 let editingAddress = false;
 let choices = [];
@@ -21,6 +22,9 @@ let lastDropdownHeight = 0;
 let shortcutSignature;
 let customSearchSignature;
 let tabSignature;
+let tabDrag;
+let tabDragPreview;
+let suppressTabClick = false;
 const moving = (settings = state?.settings) => Boolean(settings && ['normal', 'expressive'].includes(settings.motion) && motionAllowed.matches);
 const duration = (kind) => parseFloat(getComputedStyle(document.documentElement).getPropertyValue(`--motion-${kind}`)) || 0;
 
@@ -234,7 +238,7 @@ window.bro2.onFocus(() => {
 });
 
 function revealTab(tab) {
-  if (!tab) return;
+  if (!tab || tabDrag?.token || tabDragPreview || tabClosures.size) return;
   const viewport = tabBar.getBoundingClientRect();
   const bounds = tab.getBoundingClientRect();
   const vertical = document.body.classList.contains('vertical-tabs');
@@ -272,39 +276,64 @@ function drawTabIcon(slot, tab) {
   }, () => {});
 }
 
-function beginTabDrag(event, element, target) {
-  const token = crypto.randomUUID();
-  event.dataTransfer.setData(tabDragType, token);
-  event.dataTransfer.effectAllowed = 'move';
-  element.dataset.dragToken = token;
-  element.classList.add('dragging-tab');
-  window.bro2.send('tab-drag-start', { ...target, token });
+function collapseClosedTab(element, rect, viewport, vertical) {
+  if (rect.bottom <= viewport.top || rect.top >= viewport.bottom ||
+      rect.right <= viewport.left || rect.left >= viewport.right) return false;
+  const slot = document.createElement('div');
+  const axisSize = vertical ? rect.height : rect.width;
+  const trailingMargin = vertical ? 'marginBlockEnd' : 'marginInlineEnd';
+  const gap = parseFloat(getComputedStyle(tabBar).gap) || 0;
+  slot.className = 'tab-closing-slot';
+  slot.inert = true;
+  slot.setAttribute('aria-hidden', 'true');
+  slot.style.flexBasis = axisSize + 'px';
+  Object.assign(element.style, { width: rect.width + 'px', height: rect.height + 'px' });
+  delete element.dataset.tabId;
+  element.replaceWith(slot);
+  slot.append(element);
+  const animation = slot.animate([
+    { flexBasis: axisSize + 'px', [trailingMargin]: '0px', opacity: 1 },
+    { offset: .28, opacity: .92 },
+    { flexBasis: '0px', [trailingMargin]: -gap + 'px', opacity: 0 },
+  ], { duration: duration('base'), easing: 'cubic-bezier(.24,.72,.28,1)', fill: 'forwards' });
+  tabClosures.set(slot, animation);
+  function cleanup() {
+    if (!tabClosures.delete(slot)) return;
+    slot.remove();
+    revealTab(tabElements.get(state?.active));
+  }
+  animation.finished.then(cleanup, cleanup);
+  return true;
 }
 
-function endTabDrag(element) {
-  window.bro2.send('tab-drag-end', element.dataset.dragToken);
-  element.classList.remove('dragging-tab');
-  delete element.dataset.dragToken;
-  tabBar.querySelector('.tab-drop-target')?.classList.remove('tab-drop-target');
-}
-
-function animateTabRemoval(element) {
-  if (!moving() || document.hidden || document.querySelectorAll('.tab-leaving').length >= 3) return;
-  const rect = element.getBoundingClientRect();
-  const bar = tabBar.getBoundingClientRect();
-  if (rect.bottom < bar.top || rect.top > bar.bottom || rect.right < bar.left || rect.left > bar.right) return;
-  const copy = element.cloneNode(true);
-  copy.inert = true;
-  copy.classList.add('tab-leaving');
-  copy.style.setProperty('--leave-top', rect.top + 'px');
-  copy.style.setProperty('--leave-left', rect.left + 'px');
-  copy.style.setProperty('--leave-width', rect.width + 'px');
-  document.body.append(copy);
-  copy.addEventListener('animationend', () => copy.remove(), { once: true });
-  setTimeout(() => copy.remove(), 350);
+function finishTabClosures() {
+  for (const [slot, animation] of tabClosures) {
+    slot.remove();
+    animation.cancel();
+  }
+  tabClosures.clear();
 }
 
 function drawTabs(next) {
+  if (tabDrag && (next.verticalTabs !== state.verticalTabs || next.tabs.length !== state.tabs.length ||
+      next.tabs.some((tab, index) => {
+        const previous = state.tabs[index];
+        return tab.id !== previous.id || tab.pinned !== previous.pinned || tab.group?.id !== previous.group?.id ||
+          tab.group?.collapsed !== previous.group?.collapsed || tab.group?.collapsed &&
+          (tab.id === next.active) !== (tab.id === state.active);
+      }))) finishTabDrag(false);
+  const sameOrientation = state?.verticalTabs === next.verticalTabs;
+  if (!sameOrientation) finishTabClosures();
+  const animateLayout = moving(next.settings) && sameOrientation && !document.hidden;
+  const oldOrder = [...tabBar.children].filter((element) => !tabClosures.has(element));
+  const before = animateLayout ? new Map(oldOrder.map((element) => [element, element.getBoundingClientRect()])) : undefined;
+  const settling = Boolean(tabDragPreview);
+  if (tabDragPreview) {
+    clearTimeout(tabDragPreview.timer);
+    for (const element of oldOrder) element.style.removeProperty('translate');
+    tabDragPreview = undefined;
+  }
+  const focused = document.activeElement;
   document.body.classList.toggle('vertical-tabs', Boolean(next.verticalTabs));
   const ordered = [];
   const visibleGroups = new Set();
@@ -312,16 +341,13 @@ function drawTabs(next) {
   for (const tab of next.tabs) {
     const group = tab.group;
     if (group && group.id !== previousGroup) {
-      visibleGroups.add(tab.id);
-      let label = groupLabels.get(tab.id);
+      visibleGroups.add(group.id);
+      let label = groupLabels.get(group.id);
       if (!label) {
         label = document.createElement('button');
         label.type = 'button';
         label.className = 'tab-group-label';
         label.addEventListener('click', () => window.bro2.send('toggle-group', Number(label.dataset.groupId)));
-        label.draggable = true;
-        label.addEventListener('dragstart', (event) => beginTabDrag(event, label, { groupId: Number(label.dataset.groupId) }));
-        label.addEventListener('dragend', () => endTabDrag(label));
         function showMenu(x, y) {
           window.bro2.send('group-menu', { id: Number(label.dataset.groupId), x, y });
         }
@@ -335,11 +361,12 @@ function drawTabs(next) {
           const { left, bottom } = label.getBoundingClientRect();
           showMenu(left, bottom);
         });
-        groupLabels.set(tab.id, label);
+        label.append(document.createElement('span'), icon('down'));
+        groupLabels.set(group.id, label);
       }
       label.dataset.groupId = group.id;
       label.style.setProperty('--group-color', group.color);
-      label.textContent = label.title = group.title;
+      label.firstElementChild.textContent = label.title = group.title;
       label.setAttribute('aria-expanded', String(!group.collapsed));
       ordered.push(label);
     }
@@ -349,9 +376,6 @@ function drawTabs(next) {
     if (!element) {
       element = template.content.firstElementChild.cloneNode(true);
       element.dataset.tabId = tab.id;
-      element.draggable = true;
-      element.addEventListener('dragstart', (event) => beginTabDrag(event, element, { id: tab.id }));
-      element.addEventListener('dragend', () => endTabDrag(element));
       function markTab(event) {
         if (event.shiftKey) {
           const order = state.tabs.map(({ id }) => id);
@@ -380,11 +404,20 @@ function drawTabs(next) {
         event.preventDefault();
         window.bro2.send('close', tab.id);
       });
+      function showMenu(x, y) {
+        window.bro2.send('tab-menu', { id: tab.id, x, y, selected: [...selectedTabs] });
+      }
       element.addEventListener('contextmenu', (event) => {
         event.preventDefault();
-        window.bro2.send('tab-menu', { id: tab.id, x: event.clientX, y: event.clientY, selected: [...selectedTabs] });
+        showMenu(event.clientX, event.clientY);
       });
-      element.lastElementChild.textContent = '×';
+      element.addEventListener('keydown', (event) => {
+        if (event.key !== 'ContextMenu' && !(event.shiftKey && event.key === 'F10')) return;
+        event.preventDefault();
+        const { left, bottom } = element.getBoundingClientRect();
+        showMenu(left, bottom);
+      });
+      element.lastElementChild.append(icon('close'));
       tabElements.set(tab.id, element);
     }
     ordered.push(element);
@@ -395,8 +428,13 @@ function drawTabs(next) {
     element.classList.toggle('suspended', tab.suspended);
     element.classList.toggle('pinned', Boolean(tab.pinned));
     element.classList.toggle('grouped', Boolean(group));
-    if (group) element.style.setProperty('--group-color', group.color);
-    else element.style.removeProperty('--group-color');
+    if (group) {
+      element.dataset.member = group.id;
+      element.style.setProperty('--group-color', group.color);
+    } else {
+      delete element.dataset.member;
+      element.style.removeProperty('--group-color');
+    }
     drawTabIcon(element.querySelector('.tab-icon'), tab);
     element.querySelector('.tab-label').textContent = tab.title;
     element.firstElementChild.title = tab.suspended ? `${tab.title} · Выгружена из памяти` : tab.title;
@@ -409,56 +447,228 @@ function drawTabs(next) {
     if (selected) close.setAttribute('aria-keyshortcuts', 'Control+W');
     else close.removeAttribute('aria-keyshortcuts');
   }
+  const open = new Set(next.tabs.map(({ id }) => id));
   const present = new Set(next.tabs.filter(({ group, id }) => !group?.collapsed || id === next.active).map(({ id }) => id));
+  const viewport = before && tabBar.getBoundingClientRect();
   for (const id of selectedTabs) if (!present.has(id)) selectedTabs.delete(id);
   for (const [id, element] of tabElements) {
     if (present.has(id)) continue;
     tabElements.delete(id);
-    animateTabRemoval(element);
-    element.remove();
+    const rect = !open.has(id) && before?.get(element);
+    if (!rect || !collapseClosedTab(element, rect, viewport, next.verticalTabs)) element.remove();
   }
   for (const [id, label] of groupLabels) {
     if (visibleGroups.has(id)) continue;
     groupLabels.delete(id);
     label.remove();
   }
-  const reordered = ordered.some((element, index) => tabBar.children[index] !== element);
+  const remaining = [...tabBar.children].filter((element) => !tabClosures.has(element));
+  const reordered = ordered.some((element, index) => remaining[index] !== element);
   if (reordered) {
-    for (const [index, element] of ordered.entries()) {
-      if (tabBar.children[index] !== element) tabBar.insertBefore(element, tabBar.children[index] || null);
+    let position = tabBar.firstElementChild;
+    for (const element of ordered) {
+      while (tabClosures.has(position)) position = position.nextElementSibling;
+      if (element === position) position = position.nextElementSibling;
+      else tabBar.insertBefore(element, position);
     }
   }
-  if (reordered || state?.active !== next.active || state?.verticalTabs !== next.verticalTabs ||
+  if (focused?.isConnected && tabBar.contains(focused) && document.activeElement !== focused) focused.focus({ preventScroll: true });
+  if (tabClosures.size) {
+    for (const animation of tabMoves.values()) animation.cancel();
+    tabMoves.clear();
+  } else if (before && (settling || oldOrder.length !== ordered.length || ordered.some((element, index) => oldOrder[index] !== element))) {
+    for (const element of ordered) {
+      const previous = before.get(element);
+      if (!previous) continue;
+      tabMoves.get(element)?.cancel();
+      const bounds = element.getBoundingClientRect();
+      const x = previous.left - bounds.left;
+      const y = previous.top - bounds.top;
+      if (Math.abs(x) < 1 && Math.abs(y) < 1) continue;
+      const animation = element.animate([{ translate: `${x}px ${y}px` }, { translate: 'none' }],
+        { duration: duration('base'), easing: 'cubic-bezier(.2,.75,.25,1)' });
+      tabMoves.set(element, animation);
+      const cleanup = () => { if (tabMoves.get(element) === animation) tabMoves.delete(element); };
+      animation.finished.then(cleanup, cleanup);
+    }
+  }
+  if (reordered && !settling || state?.active !== next.active || state?.verticalTabs !== next.verticalTabs ||
       state?.tabs.length !== next.tabs.length) revealTab(tabElements.get(next.active));
 }
 
-tabBar.addEventListener('dragover', (event) => {
-  if (!event.dataTransfer.types.includes(tabDragType)) return;
-  event.preventDefault();
-  event.dataTransfer.dropEffect = 'move';
-  const target = event.target.closest('[data-tab-id],[data-group-id]');
-  const previous = tabBar.querySelector('.tab-drop-target');
-  if (previous !== target) previous?.classList.remove('tab-drop-target');
-  target?.classList.add('tab-drop-target');
+function startTabDrag(drag) {
+  const { element, vertical, scroll } = drag;
+  const { groupId, member, tabId } = element.dataset;
+  finishTabClosures();
+  for (const animation of tabMoves.values()) animation.cancel();
+  tabMoves.clear();
+  drag.token = crypto.randomUUID();
+  drag.initialScroll = tabBar[scroll];
+  drag.pinned = element.classList.contains('pinned');
+  drag.groupId = groupId;
+  drag.member = member;
+  drag.slots = [...tabBar.children].map((item) => {
+    item.getAnimations().find((animation) => animation.animationName === 'tab-in')?.finish();
+    const rect = item.getBoundingClientRect();
+    const group = item.dataset.groupId || item.dataset.member;
+    return { item, group, pinned: item.classList.contains('pinned'),
+      start: vertical ? rect.top : rect.left, end: vertical ? rect.bottom : rect.right,
+      held: item === element || Boolean(groupId && group === groupId) };
+  });
+  drag.first = drag.slots.findIndex(({ held }) => held);
+  drag.last = drag.slots.findLastIndex(({ held }) => held);
+  const permitted = drag.slots.filter((slot) => slot.pinned === drag.pinned);
+  drag.minDelta = permitted[0].start - drag.slots[drag.first].start;
+  drag.maxDelta = permitted.at(-1).end - drag.slots[drag.last].end;
+  drag.gap = parseFloat(getComputedStyle(tabBar).gap) || 0;
+  drag.blocks = [];
+  for (const [index, slot] of drag.slots.entries()) {
+    if (slot.held || slot.pinned !== drag.pinned) continue;
+    const wholeGroup = slot.group && slot.group !== member;
+    const previous = drag.blocks.at(-1);
+    if (wholeGroup && previous?.group === slot.group) {
+      previous.last = index;
+      previous.end = slot.end;
+    } else if (wholeGroup || !slot.item.dataset.groupId) {
+      drag.blocks.push({ first: index, last: index, start: slot.start, end: slot.end,
+        item: slot.item, group: wholeGroup ? slot.group : undefined });
+    }
+  }
+  for (const slot of drag.slots) if (slot.held) slot.item.classList.add('dragging-tab');
+  tabBar.setPointerCapture(drag.pointerId);
+  tabBar.classList.add('tab-drag-active');
+  window.bro2.send('tab-drag-start', { token: drag.token, id: Number(tabId), groupId: Number(groupId) });
+}
+
+function updateTabDrag(drag) {
+  const { vertical, scroll, slots, first, last, pointer } = drag;
+  const bounds = tabBar.getBoundingClientRect();
+  const start = vertical ? bounds.top : bounds.left;
+  const end = vertical ? bounds.bottom : bounds.right;
+  const scrollDelta = tabBar[scroll] - drag.initialScroll;
+  const offset = Math.max(start, Math.min(end, pointer)) - drag.origin + scrollDelta;
+  const delta = Math.max(drag.minDelta, Math.min(drag.maxDelta, offset));
+  const firstSlot = slots[first];
+  const lastSlot = slots[last];
+  const center = (firstSlot.start + lastSlot.end) / 2;
+  const midpoint = (block) => (block.start + block.end) / 2;
+  const leading = (drag.groupId ? firstSlot.start : center) + delta;
+  const trailing = (drag.groupId ? lastSlot.end : center) + delta;
+  const before = drag.blocks.find((block) => block.last < first && leading <= midpoint(block));
+  const after = drag.blocks.findLast((block) => block.first > last && trailing >= midpoint(block));
+  const block = before || after;
+  const hover = !drag.groupId && !drag.pinned && drag.inside && slots.find((slot) => {
+    if (slot.held || slot.pinned || slot.group && slot.group === drag.member) return false;
+    const ratio = (pointer + scrollDelta - slot.start) / (slot.end - slot.start);
+    return ratio > .28 && ratio < .72;
+  });
+  if (hover !== drag.hover) {
+    clearTimeout(drag.groupTimer);
+    drag.groupTarget?.classList.remove('tab-drop-target');
+    drag.groupTarget = undefined;
+    drag.hover = hover;
+    if (hover) drag.groupTimer = setTimeout(() => {
+      drag.groupTarget = hover.item;
+      hover.item.classList.add('tab-drop-target');
+      updateTabDrag(drag);
+    }, 450);
+  }
+
+  const combine = Boolean(drag.groupTarget);
+  tabBar.classList.toggle('tab-drag-combine', combine);
+  drag.target = drag.groupTarget || block?.item;
+  drag.after = Boolean(after);
+  drag.combine = combine;
+  const span = lastSlot.end - firstSlot.start + drag.gap;
+  for (const [index, slot] of slots.entries()) {
+    let shift = 0;
+    if (slot.held) shift = delta;
+    else if (!combine && before && index >= before.first && index < first) shift = span;
+    else if (!combine && after && index <= after.last && index > last) shift = -span;
+    slot.item.style.translate = vertical ? "0 " + shift + "px" : shift + "px 0";
+  }
+}
+
+function scrollWhileDragging(drag) {
+  const bounds = tabBar.getBoundingClientRect();
+  const start = drag.vertical ? bounds.top : bounds.left;
+  const end = drag.vertical ? bounds.bottom : bounds.right;
+  const previous = tabBar[drag.scroll];
+  if (drag.pointer < start + 26) tabBar[drag.scroll] -= 8;
+  else if (drag.pointer > end - 26) tabBar[drag.scroll] += 8;
+  if (tabBar[drag.scroll] !== previous) updateTabDrag(drag);
+  drag.frame = requestAnimationFrame(() => scrollWhileDragging(drag));
+}
+
+function finishTabDrag(commit) {
+  const drag = tabDrag;
+  tabDrag = undefined;
+  if (!drag?.token) return;
+  if (tabBar.hasPointerCapture(drag.pointerId)) tabBar.releasePointerCapture(drag.pointerId);
+  cancelAnimationFrame(drag.frame);
+  clearTimeout(drag.groupTimer);
+  drag.groupTarget?.classList.remove('tab-drop-target');
+  for (const { item } of drag.slots) item.classList.remove('dragging-tab');
+  tabBar.classList.remove('tab-drag-active', 'tab-drag-combine');
+  const target = commit && drag.target;
+  if (target) {
+    window.bro2.send('tab-drop', { token: drag.token, targetId: Number(target.dataset.tabId),
+      targetGroupId: Number(target.dataset.groupId), after: drag.after, combine: drag.combine });
+  }
+  window.bro2.send('tab-drag-end', drag.token);
+  tabDragPreview = { timer: setTimeout(() => drawTabs(state), target ? 180 : 0) };
+}
+
+tabBar.addEventListener('pointerdown', (event) => {
+  if (!state || !event.isPrimary || event.button !== 0 || tabDrag) return;
+  suppressTabClick = false;
+  const element = event.target.closest('[data-tab-id],[data-group-id]');
+  if (!element || event.target.closest('.close')) return;
+  if (tabDragPreview) drawTabs(state);
+  const vertical = state.verticalTabs;
+  const origin = vertical ? event.clientY : event.clientX;
+  tabDrag = { element, vertical, origin, pointer: origin, pointerId: event.pointerId,
+    scroll: vertical ? 'scrollTop' : 'scrollLeft' };
 });
 
-tabBar.addEventListener('dragleave', (event) => {
-  if (!tabBar.contains(event.relatedTarget)) tabBar.querySelector('.tab-drop-target')?.classList.remove('tab-drop-target');
+window.addEventListener('pointermove', (event) => {
+  const drag = tabDrag;
+  if (event.pointerId !== drag?.pointerId) return;
+  if (!(event.buttons & 1)) { finishTabDrag(false); return; }
+  drag.pointer = drag.vertical ? event.clientY : event.clientX;
+  const bounds = tabBar.getBoundingClientRect();
+  drag.inside = event.clientX >= bounds.left && event.clientX <= bounds.right &&
+    event.clientY >= bounds.top && event.clientY <= bounds.bottom;
+  if (!drag.token) {
+    if (Math.abs(drag.pointer - drag.origin) < 5) return;
+    startTabDrag(drag);
+    suppressTabClick = true;
+    drag.frame = requestAnimationFrame(() => scrollWhileDragging(drag));
+  } else if (!tabBar.hasPointerCapture(drag.pointerId)) {
+    tabBar.setPointerCapture(drag.pointerId);
+  }
+  updateTabDrag(drag);
 });
 
-tabBar.addEventListener('drop', (event) => {
-  const token = event.dataTransfer.getData(tabDragType);
-  if (!token) return;
-  event.preventDefault();
-  tabBar.querySelector('.tab-drop-target')?.classList.remove('tab-drop-target');
-  const over = event.target.closest('[data-tab-id],[data-group-id]');
-  const target = over || [...tabBar.querySelectorAll('[data-tab-id],[data-group-id]')].at(-1);
-  if (!target) return;
-  const bounds = target.getBoundingClientRect();
-  const ratio = state.verticalTabs ? (event.clientY - bounds.top) / bounds.height : (event.clientX - bounds.left) / bounds.width;
-  window.bro2.send('tab-drop', { token, targetId: Number(target.dataset.tabId), targetGroupId: Number(target.dataset.groupId),
-    after: !over || ratio >= .5, combine: Boolean(over && ratio > .29 && ratio < .71) });
+window.addEventListener('pointerup', (event) => {
+  if (event.pointerId === tabDrag?.pointerId) finishTabDrag(true);
 });
+window.addEventListener('pointercancel', (event) => {
+  if (event.pointerId === tabDrag?.pointerId) finishTabDrag(false);
+});
+tabBar.addEventListener('lostpointercapture', (event) => {
+  if (event.pointerId === tabDrag?.pointerId && !(event.buttons & 1)) finishTabDrag(false);
+});
+window.addEventListener('blur', () => finishTabDrag(false));
+window.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && tabDrag) finishTabDrag(false);
+}, true);
+tabBar.addEventListener('click', (event) => {
+  if (suppressTabClick && event.detail) {
+    suppressTabClick = false;
+    event.stopImmediatePropagation();
+  }
+}, true);
 
 function shortcutAddress(input) {
   const value = input.trim();
@@ -493,7 +703,7 @@ function drawShortcuts(shortcuts) {
   const signature = JSON.stringify(shortcuts);
   if (signature === shortcutSignature) return;
   shortcutSignature = signature;
-  const elements = shortcuts.map(({ url, title }) => {
+  const elements = shortcuts.map(({ url, title, favicon }) => {
     const item = document.createElement('div');
     const open = document.createElement('button');
     const bubble = document.createElement('span');
@@ -508,6 +718,12 @@ function drawShortcuts(shortcuts) {
     bubble.className = 'shortcut-bubble';
     const hostname = new URL(url).hostname.replace(/^www\./i, '');
     bubble.textContent = Array.from(hostname)[0]?.toLocaleUpperCase() || '↗';
+    if (favicon) {
+      const image = new Image();
+      image.alt = '';
+      image.addEventListener('load', () => bubble.replaceChildren(image), { once: true });
+      image.src = favicon;
+    }
     bubble.setAttribute('aria-hidden', 'true');
     label.className = 'shortcut-label';
     label.textContent = title;
@@ -526,6 +742,7 @@ function drawShortcuts(shortcuts) {
     const bubble = document.createElement('span');
     const label = document.createElement('span');
     add.type = 'button';
+    add.id = 'shortcut-add';
     add.className = 'shortcut shortcut-open';
     bubble.className = 'shortcut-bubble';
     bubble.append(icon('plus'));
@@ -544,38 +761,63 @@ function drawShortcuts(shortcuts) {
 }
 
 const wordmark = document.querySelector('.wordmark');
+const wordmarkAnchor = wordmark.parentElement;
+const wordmarkTile = wordmark.closest('.home-tile');
+const mouseHover = matchMedia('(any-hover: hover) and (any-pointer: fine)');
 let animationFrame = 0;
 let x = 0;
 let y = 0;
 let targetX = 0;
 let targetY = 0;
-function animateWordmark() {
-  x += (targetX - x) * .17;
-  y += (targetY - y) * .17;
+let lastWordmarkFrame;
+function animateWordmark(now) {
+  const blend = 1 - Math.exp(-Math.min(now - (lastWordmarkFrame ?? now - 16), 50) / 65);
+  lastWordmarkFrame = now;
+  x += (targetX - x) * blend;
+  y += (targetY - y) * blend;
   if (Math.abs(targetX - x) + Math.abs(targetY - y) < .05) { x = targetX; y = targetY; }
-  wordmark.style.transform = `perspective(740px) translate3d(${x}px, ${y}px, 0) rotateX(${-y * .42}deg) rotateY(${x * .42}deg)`;
+  wordmark.style.transform = `translate3d(${x}px, ${y}px, 0)`;
   animationFrame = x === targetX && y === targetY ? 0 : requestAnimationFrame(animateWordmark);
+  if (!animationFrame) lastWordmarkFrame = undefined;
 }
 function resetWordmark() {
   targetX = targetY = 0;
   if (!animationFrame && (x || y)) animationFrame = requestAnimationFrame(animateWordmark);
 }
-const wordmarkArea = wordmark.parentElement;
-wordmarkArea.addEventListener('pointermove', (event) => {
-  if (!moving() || byId('home').hidden || event.pointerType === 'touch') return;
-  const { width, height, left, top } = wordmarkArea.getBoundingClientRect();
-  targetX = ((event.clientX - left) / width - .5) * 22;
-  targetY = ((event.clientY - top) / height - .5) * 16;
+window.addEventListener('pointermove', (event) => {
+  if (!moving() || !mouseHover.matches || wordmarkTile.hidden || byId('home').hidden ||
+      byId('home').classList.contains('is-editing') || event.pointerType !== 'mouse') {
+    stopWordmark();
+    return;
+  }
+  const { width, height, left, top, right, bottom } = wordmarkAnchor.getBoundingClientRect();
+  const dx = left + width / 2 - event.clientX;
+  const dy = top + height / 2 - event.clientY;
+  const distance = Math.hypot(dx / (width / 2 + 86), dy / (height / 2 + 72));
+  if (distance >= 1) { resetWordmark(); return; }
+  const length = Math.hypot(dx, dy) || 1;
+  const strength = 25 * (1 - distance) ** 2 * (1 + 2 * distance);
+  const tile = wordmarkTile.getBoundingClientRect();
+  const bounded = (value, low, high) => Math.max(Math.min(0, low), Math.min(Math.max(0, high), value));
+  targetX = bounded(strength * dx / length, tile.left - left, tile.right - right);
+  targetY = bounded(strength * dy / length, tile.top - top, tile.bottom - bottom);
   if (!animationFrame) animationFrame = requestAnimationFrame(animateWordmark);
 });
-wordmarkArea.addEventListener('pointerleave', resetWordmark);
+document.documentElement.addEventListener('pointerleave', resetWordmark);
+window.addEventListener('home-edit', stopWordmark);
+document.querySelector('main').addEventListener('scroll', resetWordmark, { passive: true });
+mouseHover.addEventListener('change', stopWordmark);
 function stopWordmark() {
   cancelAnimationFrame(animationFrame);
   animationFrame = x = y = targetX = targetY = 0;
+  lastWordmarkFrame = undefined;
   wordmark.style.removeProperty('transform');
 }
 function stopMotion() {
   cancelPressAnimations();
+  finishTabClosures();
+  tabMoves.forEach((animation) => animation.cancel());
+  tabMoves.clear();
   stopWordmark();
 }
 window.addEventListener('blur', stopWordmark);
@@ -602,9 +844,8 @@ byId('motion-preview').addEventListener('click', ({ currentTarget }) => {
 function drawSettings(next) {
   const { settings, settingsOpen, account, status } = next;
   if (!moving(settings)) stopMotion();
-  document.documentElement.dataset.theme = settings.theme;
+  window.applyTheme(settings);
   updateMotion(settings);
-  document.documentElement.style.setProperty('--theme-accent', settings.accent);
   byId('accent').value = settings.accent;
   document.querySelectorAll('.swatch').forEach((button) => {
     button.setAttribute('aria-pressed', String(button.value.toLowerCase() === settings.accent.toLowerCase()));

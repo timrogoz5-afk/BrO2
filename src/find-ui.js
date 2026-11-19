@@ -29,9 +29,8 @@ next.addEventListener('click', () => search(1));
 previous.addEventListener('click', () => search(-1));
 document.getElementById('find-close').addEventListener('click', () => window.findPage.close());
 
-window.findPage.onFocus(({ theme, accent }, fresh) => {
-  document.documentElement.dataset.theme = theme;
-  document.documentElement.style.setProperty('--theme-accent', accent);
+window.findPage.onFocus((settings, fresh) => {
+  window.applyTheme(settings);
   if (fresh) {
     field.value = '';
     matches = ordinal = 0;

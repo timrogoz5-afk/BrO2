@@ -5,6 +5,7 @@ const { credential, httpsOrigin, parseChromePasswords } = require('./password-va
 const { parseBookmarks, bookmarkStats, bookmarkHTML, importTicket } = require('./bookmarks');
 
 const lifetime = 30_000;
+const scriptRequestWindow = 5000;
 const withoutFragment = (url) => url.split('#')[0];
 
 function passwords({ vault, library, window, chrome, passwordPopup, browsingSession, active, settings, resize, shellURL, passwordURL, privateMode }) {
@@ -51,6 +52,11 @@ function passwords({ vault, library, window, chrome, passwordPopup, browsingSess
     const current = context(snapshot.tab);
     return current && current.frame === snapshot.frame && current.documentId === snapshot.documentId &&
       current.origin === snapshot.origin && (!requireForm || (snapshot.form && current.form === snapshot.form));
+  }
+
+  function suggest() {
+    const snapshot = context();
+    if (snapshot) snapshot.frame.send('password:suggest', snapshot.documentId);
   }
 
   function show(next, focus = false) {
@@ -125,6 +131,7 @@ function passwords({ vault, library, window, chrome, passwordPopup, browsingSess
     if (!tab || typeof id !== 'string' || tab.password.navigating ||
         event.senderFrame !== event.sender.mainFrame || !httpsOrigin(event.senderFrame?.url)) return;
     tab.password.documentId = id;
+    if (tab === active()) suggest();
   });
 
   on('password:form', (event, data) => {
@@ -161,16 +168,17 @@ function passwords({ vault, library, window, chrome, passwordPopup, browsingSess
     const { tab, origin } = snapshot;
     expire(tab);
     dismiss();
-    const { kind, target, username, password } = submission;
+    const { kind, target, username, password, submissionId } = submission;
     if (!settings().offers || typeof target !== 'string' || target.length > 8192 || httpsOrigin(target) !== origin ||
+        typeof submissionId !== 'string' || submissionId.length !== 36 ||
         !['username', 'login', 'change', 'registration'].includes(kind)) return;
     const { step } = tab.password;
     tab.password.step = null;
     const effectiveUser = username || (step?.origin === origin && step.until > Date.now() ? step.username : '');
     const entry = credential({ origin, username: effectiveUser, password });
     if (kind === 'username' ? typeof username !== 'string' || !username || username.length > 1024 : !entry) return;
-    const attempt = { kind, entry, username, target, origin, until: Date.now() + lifetime,
-      started: false, post: false, redirect: false };
+    const attempt = { kind, entry, username, target, origin, documentId: snapshot.documentId, submissionId,
+      time: Date.now(), started: false, post: false };
     tab.password.attempt = attempt;
     tab.password.timer = setTimeout(() => expire(tab), lifetime);
   });
@@ -178,23 +186,26 @@ function passwords({ vault, library, window, chrome, passwordPopup, browsingSess
   on('password:result', async (event, result) => {
     const snapshot = sender(event, result?.documentId);
     const state = snapshot?.tab.password;
-    if (!state?.result || !state.attempt) return;
-    const attempt = state.attempt;
+    const attempt = state?.attempt;
+    if (!attempt) return;
+    const script = result.submissionId !== undefined;
+    if (script ? !attempt.scriptOK || result.submissionId !== attempt.submissionId ||
+        snapshot.documentId !== attempt.documentId : !state.result || !attempt.post) return;
     state.result = false;
     expire(snapshot.tab);
-    if (attempt.until <= Date.now() || result.errorVisible || result.codeVisible || !attempt.post) return;
+    if (attempt.time + lifetime <= Date.now() || result.errorVisible || result.codeVisible) return;
     if (attempt.kind === 'username') {
       state.step = { origin: snapshot.origin, username: attempt.username, until: Date.now() + lifetime };
       return;
     }
-    if (result.passwordVisible || !attempt.redirect || !settings().offers) return;
+    if (result.passwordVisible || !settings().offers) return;
     try {
       const { entries, exceptions } = await vault.list();
       if (exceptions.includes(snapshot.origin) || !sameContext(snapshot) || !settings().offers || state.attempt) return;
       const alternatives = entries.filter((entry) => entry.origin === snapshot.origin);
       const exact = alternatives.find((entry) => entry.username === attempt.entry.username);
       if (exact && (await vault.get(exact.id, snapshot.origin))?.password === attempt.entry.password) return;
-      if (!sameContext(snapshot) || state.attempt) return;
+      if (!sameContext(snapshot) || state.attempt || !settings().offers) return;
       show({ snapshot, entry: attempt.entry, public: {
         type: 'save', origin: snapshot.origin, username: attempt.entry.username,
         entries: alternatives, selected: exact?.id || '',
@@ -394,8 +405,22 @@ function passwords({ vault, library, window, chrome, passwordPopup, browsingSess
   function observePost(details) {
     const tab = active();
     const attempt = tab?.password.attempt;
-    if (attempt && details.webContentsId === tab.view.webContents.id && details.resourceType === 'mainFrame' &&
-        details.method === 'POST' && withoutFragment(details.url) === attempt.target) attempt.post = true;
+    if (!attempt || details.webContentsId !== tab.view.webContents.id || details.method !== 'POST') return;
+    if (details.resourceType === 'mainFrame' && withoutFragment(details.url) === attempt.target) attempt.post = true;
+    if (details.resourceType === 'xhr' && !attempt.started && attempt.requestId === undefined &&
+        Date.now() - attempt.time < scriptRequestWindow && httpsOrigin(details.url) === attempt.origin &&
+        details.frame === tab.view.webContents.mainFrame) attempt.requestId = details.id;
+  }
+
+  function observeResponse(details) {
+    if (details.resourceType !== 'xhr') return;
+    const snapshot = context();
+    const attempt = snapshot?.tab.password.attempt;
+    if (!attempt || attempt.started || details.id !== attempt.requestId ||
+        snapshot.documentId !== attempt.documentId || httpsOrigin(details.url) !== attempt.origin ||
+        !Number.isInteger(details.statusCode) || details.statusCode < 200 || details.statusCode >= 300) return;
+    attempt.scriptOK = true;
+    snapshot.frame.send('password:result-check', snapshot.documentId, attempt.submissionId);
   }
 
   function attach(tab) {
@@ -414,18 +439,16 @@ function passwords({ vault, library, window, chrome, passwordPopup, browsingSess
       state.form = undefined;
       state.result = false;
       const attempt = state.attempt;
-      if (!attempt || attempt.started || details.isSameDocument || withoutFragment(details.url) !== attempt.target) expire(tab);
+      if (details.isSameDocument) return;
+      if (!attempt || attempt.started || withoutFragment(details.url) !== attempt.target) expire(tab);
       else attempt.started = true;
-      if (!details.isSameDocument) {
-        state.navigating = true;
-        state.documentId = undefined;
-        state.step = null;
-      }
+      state.navigating = true;
+      state.documentId = undefined;
+      state.step = null;
     });
     contents.on('will-redirect', (details) => {
       if (!details.isMainFrame || !state.attempt) return;
       if (httpsOrigin(details.url) !== state.attempt.origin) expire(tab);
-      else state.attempt.redirect = true;
     });
     contents.on('did-navigate', (_event, url, code) => {
       state.navigating = false;
@@ -458,6 +481,8 @@ function passwords({ vault, library, window, chrome, passwordPopup, browsingSess
   return {
     attach,
     observePost,
+    observeResponse,
+    suggest,
     dismiss,
     reset,
     leaveSettings() { settingsEpoch++; clearTicket(); },

@@ -41,6 +41,7 @@ async function mediaAction(action) {
   if (action === 'pip') await player.requestPictureInPicture();
   else if (player.paused) await player.play();
   else player.pause();
+  if (action === 'home-toggle') return { playing: !player.paused };
   return true;
 }
 

@@ -18,6 +18,7 @@ const searchEngines = {
   yandex: ['https://yandex.ru/search/', 'text'],
   duckduckgo: ['https://duckduckgo.com/', 'q'],
   bing: ['https://www.bing.com/search', 'q'],
+  perplexity: ['https://www.perplexity.ai/search', 'q'],
 };
 
 function customSearchEngine(entry) {

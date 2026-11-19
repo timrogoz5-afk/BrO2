@@ -40,6 +40,12 @@
   let section = 'appearance';
   let privateMode;
   let highlighted;
+  let transition = [];
+  function stopTransition() {
+    transition.forEach((animation) => animation.cancel());
+    transition = [];
+  }
+  motionAllowed.addEventListener('change', stopTransition);
   const searchable = [];
   for (const category of sections) {
     const button = document.createElement('button');
@@ -88,12 +94,24 @@
   }
 
   function open(id, entry) {
+    const changed = id !== section || !results.hidden;
     query.value = '';
     section = id;
     highlighted?.classList.remove('setting-highlight');
     highlighted = undefined;
     update();
     panel.parentElement.scrollTop = 0;
+    if (changed) {
+      stopTransition();
+      if (!panel.hidden && moving()) {
+        const cards = sections.find((category) => category.id === id).groups.filter((group) => !group.hidden);
+        transition = [categoryHeading, ...cards].map((element, index) => element.animate([
+          { opacity: 0, translate: `0 ${state.settings.motion === 'expressive' ? 11 : 6}px` },
+          { opacity: 1, translate: '0 0' },
+        ], { duration: duration('base'), delay: Math.min(index, 3) * 24,
+          easing: 'cubic-bezier(.2,.75,.25,1)', fill: 'backwards' }));
+      }
+    }
     if (!entry) return;
     if (entry.group.tagName === 'DETAILS') entry.group.open = true;
     highlighted = entry.target;
@@ -108,6 +126,7 @@
   }
 
   query.addEventListener('input', () => {
+    stopTransition();
     const words = query.value.trim().toLocaleLowerCase('ru').split(/\s+/).filter(Boolean);
     const entries = words.length ? searchable.filter(({ group, words: haystack }) => !group.hidden &&
       words.every((word) => haystack.includes(word))) : [];
@@ -149,6 +168,7 @@
     window.bro2.send('settings-tool', button.dataset.settingTool));
   byId('settings-customize-home').addEventListener('click', () => window.bro2.send('settings-customize-home'));
   window.bro2.onState((next) => {
+    if (!next.settingsOpen || !moving(next.settings)) stopTransition();
     byId('new-tab-settings').hidden = byId('extension-settings').hidden = next.privateMode;
     if (privateMode !== next.privateMode || next.settingsOpen && panel.dataset.open !== 'true') {
       privateMode = next.privateMode;

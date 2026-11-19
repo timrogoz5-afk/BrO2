@@ -1,0 +1,110 @@
+@property --tabbar { syntax: '<color>'; inherits: true; initial-value: #1e1926; }
+@property --toolbar { syntax: '<color>'; inherits: true; initial-value: #251e2f; }
+@property --floor { syntax: '<color>'; inherits: true; initial-value: #19151f; }
+@property --raised { syntax: '<color>'; inherits: true; initial-value: #2a2336; }
+@property --field { syntax: '<color>'; inherits: true; initial-value: #352b44; }
+@property --hover { syntax: '<color>'; inherits: true; initial-value: #413451; }
+@property --pressed { syntax: '<color>'; inherits: true; initial-value: #4e3e61; }
+@property --line { syntax: '<color>'; inherits: true; initial-value: #483b54; }
+@property --muted { syntax: '<color>'; inherits: true; initial-value: #c9bcd5; }
+@property --color-text { syntax: '<color>'; inherits: true; initial-value: #f5edfa; }
+@property --on-primary { syntax: '<color>'; inherits: true; initial-value: #170f20; }
+@property --accent { syntax: '<color>'; inherits: true; initial-value: #d4c5ff; }
+@property --accent-fill { syntax: '<color>'; inherits: true; initial-value: #5b4c82; }
+@property --surface-shortcuts { syntax: '<color>'; inherits: true; initial-value: #30223f; }
+@property --surface-clock { syntax: '<color>'; inherits: true; initial-value: #4a3669; }
+@property --surface-date { syntax: '<color>'; inherits: true; initial-value: #3a2b48; }
+@property --surface-media { syntax: '<color>'; inherits: true; initial-value: #25483e; }
+@property --surface-news { syntax: '<color>'; inherits: true; initial-value: #452d3a; }
+@property --shadow { syntax: '<color>'; inherits: true; initial-value: #0d071b54; }
+@property --shadow-strong { syntax: '<color>'; inherits: true; initial-value: #0c061aa8; }
+@property --scrim { syntax: '<color>'; inherits: true; initial-value: #100919a6; }
+@property --danger-fill { syntax: '<color>'; inherits: true; initial-value: #623141; }
+@property --danger-ink { syntax: '<color>'; inherits: true; initial-value: #ffd4df; }
+@property --widget-violet { syntax: '<color>'; inherits: true; initial-value: #cdb2ff; }
+@property --widget-blue { syntax: '<color>'; inherits: true; initial-value: #aecaff; }
+@property --widget-mint { syntax: '<color>'; inherits: true; initial-value: #98e4c4; }
+@property --widget-rose { syntax: '<color>'; inherits: true; initial-value: #ffc1db; }
+@property --widget-amber { syntax: '<color>'; inherits: true; initial-value: #ffd99a; }
+@property --wall-a { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --wall-b { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --wall-c { syntax: '<color>'; inherits: true; initial-value: transparent; }
+@property --wall-base { syntax: '<color>'; inherits: true; initial-value: #221830; }
+
+:root {
+  --wall-tint: transparent;
+  --wall-ink: transparent;
+  --wall-tint-weight: 0%;
+  --wall-ink-weight: 0%;
+  --tabbar: color-mix(in srgb, light-dark(#ece7f4, #1e1926), var(--wall-tint) var(--wall-tint-weight));
+  --toolbar: color-mix(in srgb, light-dark(#f7f2fb, #251e2f), var(--wall-tint) var(--wall-tint-weight));
+  --floor: color-mix(in srgb, light-dark(#f8f4fb, #19151f), var(--wall-tint) var(--wall-tint-weight));
+  --raised: color-mix(in srgb, light-dark(#fffaff, #2a2336), var(--wall-tint) var(--wall-tint-weight));
+  --field: color-mix(in srgb, light-dark(#eee7f5, #352b44), var(--wall-tint) var(--wall-tint-weight));
+  --hover: color-mix(in srgb, light-dark(#e7ddf2, #413451), var(--wall-tint) var(--wall-tint-weight));
+  --pressed: color-mix(in srgb, light-dark(#ddcdeb, #4e3e61), var(--wall-tint) var(--wall-tint-weight));
+  --line: color-mix(in srgb, light-dark(#ded3e7, #483b54), var(--wall-tint) var(--wall-tint-weight));
+  --color-text: color-mix(in srgb, light-dark(#261c32, #f5edfa), var(--wall-ink) var(--wall-ink-weight));
+  --muted: color-mix(in srgb, light-dark(#60536c, #c9bcd5), var(--wall-ink) var(--wall-ink-weight));
+  --accent-base: light-dark(color-mix(in srgb, var(--theme-accent) 30%, #38244d),
+    color-mix(in srgb, var(--theme-accent) 44%, #f6dfff));
+  --accent: color-mix(in srgb, var(--accent-base), var(--wall-ink) var(--wall-ink-weight));
+  --accent-fill-base: light-dark(color-mix(in srgb, var(--theme-accent) 32%, #ede1f7),
+    color-mix(in srgb, var(--theme-accent) 25%, #412658));
+  --accent-fill: color-mix(in srgb, var(--accent-fill-base), var(--wall-tint) var(--wall-tint-weight));
+  --surface-shortcuts: color-mix(in srgb, light-dark(#f5ebfb, #30223f), var(--wall-tint) var(--wall-tint-weight));
+  --surface-clock: color-mix(in srgb, light-dark(#dbd3f8, #4a3669), var(--wall-tint) var(--wall-tint-weight));
+  --surface-date: color-mix(in srgb, light-dark(#ece1f4, #3a2b48), var(--wall-tint) var(--wall-tint-weight));
+  --surface-media: color-mix(in srgb, light-dark(#daece5, #25483e), var(--wall-tint) var(--wall-tint-weight));
+  --surface-news: color-mix(in srgb, light-dark(#f4e5ea, #452d3a), var(--wall-tint) var(--wall-tint-weight));
+  --control-radius: 17px;
+  --panel-radius: 20px;
+  --ease: cubic-bezier(.22,.76,.25,1);
+  --ease-spring: cubic-bezier(.18,.9,.27,1.14);
+  color: var(--color-text);
+  accent-color: var(--accent);
+  scrollbar-color: var(--line) var(--floor);
+}
+:root[data-color-scheme='light'] {
+  color-scheme: light;
+  --on-primary: #ffffff;
+  --shadow: #36234d27;
+  --shadow-strong: #442d6457;
+  --scrim: #27163d68;
+  --danger-fill: #ffd4df;
+  --danger-ink: #793343;
+  --widget-violet: #6a469d;
+  --widget-blue: #315b9e;
+  --widget-mint: #236348;
+  --widget-rose: #8c3a60;
+  --widget-amber: #7c490a;
+}
+:root[data-color-scheme='dark'] { color-scheme: dark; }
+
+:root[data-wallpaper='dawn'] {
+  --wall-tint: light-dark(#f4d2ce, #502b3b);
+  --wall-ink: light-dark(#541f32, #ffd1ce);
+}
+:root[data-wallpaper='coast'] {
+  --wall-tint: light-dark(#c8e7e3, #17413f);
+  --wall-ink: light-dark(#104744, #b6f4e9);
+}
+:root[data-wallpaper='solid'] {
+  --wall-tint: light-dark(#e8e8ed, #292a2f);
+  --wall-ink: light-dark(#373840, #e2e4ee);
+}
+:root:is([data-wallpaper='dawn'], [data-wallpaper='coast'], [data-wallpaper='solid']) {
+  --wall-tint-weight: 65%;
+  --wall-ink-weight: 44%;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  :root[data-theme-ready]:not([data-motion='off']) {
+    transition-duration: 400ms;
+    transition-timing-function: ease-in-out;
+    transition-property: --tabbar, --toolbar, --floor, --raised, --field, --hover, --pressed, --line,
+      --muted, --color-text, --on-primary, --accent, --accent-fill, --surface-shortcuts, --surface-clock, --surface-date,
+      --surface-media, --surface-news, --shadow, --shadow-strong, --scrim, --danger-fill, --danger-ink, --widget-violet,
+      --widget-blue, --widget-mint, --widget-rose, --widget-amber, --wall-a, --wall-b, --wall-c, --wall-base;
+  }
+}
