@@ -2,7 +2,7 @@
   const canvasWidth = 1200;
   const gridStep = 24;
   const maxY = 4000;
-  const positions = {
+  const legacyGrid = {
     logo: [0, 0, 12, 2], search: [0, 2, 12, 1], shortcuts: [0, 3, 7, 4],
     clock: [7, 3, 5, 3], date: [7, 6, 5, 1], weather: [0, 7, 4, 3],
     media: [4, 7, 8, 3], news: [0, 10, 6, 4], feed: [6, 10, 6, 4],
@@ -25,7 +25,7 @@
     feed: { published: 'Время публикации', source: 'Название источника', summary: 'Краткое описание' },
   };
   const offByDefault = {
-    logo: ['title'], search: ['title'], shortcuts: [], clock: [], date: [],
+    logo: ['title'], search: ['title'], shortcuts: [], clock: ['zone'], date: [],
     weather: [], media: [], news: [], feed: [],
   };
   const minimum = {
@@ -46,7 +46,7 @@
   }
 
   function legacyPositions(value) {
-    const cells = Object.entries(positions).map(([id, [x, y, w, h]]) => {
+    const cells = Object.entries(legacyGrid).map(([id, [x, y, w, h]]) => {
       const item = value?.tiles?.[id];
       const legacy = (key) => Number.isInteger(item?.[key]) ? item[key] : undefined;
       const width = limit(legacy('w'), w, Math.ceil((minimum[id][0] + 10) / (1210 / 12)), 12);
@@ -64,10 +64,21 @@
       [id, { x: x * 101 - x / 6, y: y * 66, w: w * (1210 / 12) - 10, h: h * 66 - 10, enabled }]));
   }
 
-  const defaultPositions = legacyPositions();
+  const defaultPositions = {
+    logo: { x: 166, y: 0, w: 868, h: 104, enabled: true },
+    search: { x: 166, y: 131, w: 868, h: 56, enabled: true },
+    weather: { x: 158, y: 203, w: 292, h: 192, enabled: true },
+    clock: { x: 456, y: 203, w: 306, h: 192, enabled: true },
+    shortcuts: { x: 769, y: 203, w: 286, h: 192, enabled: true },
+    date: { x: 158, y: 407, w: 292, h: 62, enabled: false },
+    media: { x: 456, y: 407, w: 599, h: 192, enabled: false },
+    news: { x: 158, y: 611, w: 443, h: 254, enabled: false },
+    feed: { x: 612, y: 611, w: 443, h: 254, enabled: false },
+  };
   function homeLayout(value) {
     const free = value?.version === 2;
-    const geometry = free ? value.tiles : legacyPositions(value);
+    const legacy = !free && Boolean(value?.tiles);
+    const geometry = legacy ? legacyPositions(value) : value?.tiles;
     const tiles = {};
     for (const [id, defaults] of Object.entries(defaultPositions)) {
       const item = value?.tiles?.[id];
@@ -85,16 +96,22 @@
           typeof item?.fields?.[key] === 'boolean' ? item.fields[key] : !offByDefault[id].includes(key)])),
       };
     }
+    if (legacy) {
+      const savedFields = value.tiles.clock?.fields;
+      if (tiles.date.enabled && typeof savedFields?.date !== 'boolean') tiles.clock.fields.date = false;
+      if (typeof savedFields?.zone !== 'boolean') tiles.clock.fields.zone = true;
+    }
     const order = Array.isArray(value?.order) ? value.order.filter((id) => Object.hasOwn(tiles, id)) : [];
     return { version: 2, tiles, order: [...new Set([...order, ...Object.keys(tiles)])], snapToGrid: value?.snapToGrid === true,
       wallpaper: choice(value?.wallpaper, Object.keys(wallpaperNames)),
-      clock: choice(value?.clock, ['digital', 'digital-compact', 'analog', 'analog-dial']),
+      clock: choice(value?.clock ?? (legacy ? 'digital' : 'analog-dial'), ['digital', 'digital-compact', 'analog', 'analog-dial']),
       clockFormat: choice(value?.clockFormat, ['24', '12']),
       city: typeof value?.city === 'string' ? value.city.trim().slice(0, 100) : '',
       feed: feedURL(value?.feed), news: choice(value?.news, ['technology', 'world']),
-      shortcutSize: choice(value?.shortcutSize, ['medium', 'small', 'large']),
+      shortcutSize: choice(value?.shortcutSize ?? (legacy ? 'medium' : 'large'), ['medium', 'small', 'large']),
       shortcutShape: choice(value?.shortcutShape, ['soft', 'circle', 'square']),
-      shortcutIcon: value?.shortcutIcon !== false, shortcutTitle: value?.shortcutTitle !== false,
+      shortcutIcon: value?.shortcutIcon !== false,
+      shortcutTitle: typeof value?.shortcutTitle === 'boolean' ? value.shortcutTitle : legacy,
       shortcutOrder: Array.isArray(value?.shortcutOrder) ? [...new Set(value.shortcutOrder.filter((url) =>
         typeof url === 'string' && url.length <= 8192))].slice(0, 12) : [],
     };

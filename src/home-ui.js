@@ -185,6 +185,11 @@
     updateDensity();
     home.classList.toggle('is-editing', editing());
     if (!home.hidden) {
+      home.toggleAttribute('data-default-layout', Object.entries(defaults.tiles).every(([id, tile]) => {
+        const current = layout.tiles[id];
+        return current.enabled === tile.enabled && (!tile.enabled ||
+          ['x', 'y', 'w', 'h'].every((key) => current[key] === tile[key]));
+      }));
       for (const id of tiles.keys()) renderTile(id);
       readingOrder(layout).forEach((id, i) => tiles.get(id).style.setProperty('--tile-order', i));
       setLayers();
