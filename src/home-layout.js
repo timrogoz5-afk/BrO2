@@ -65,15 +65,15 @@
   }
 
   const defaultPositions = {
-    logo: { x: 166, y: 0, w: 868, h: 104, enabled: true },
-    search: { x: 166, y: 131, w: 868, h: 56, enabled: true },
-    weather: { x: 158, y: 203, w: 292, h: 192, enabled: true },
-    clock: { x: 456, y: 203, w: 306, h: 192, enabled: true },
-    shortcuts: { x: 769, y: 203, w: 286, h: 192, enabled: true },
-    date: { x: 158, y: 407, w: 292, h: 62, enabled: false },
-    media: { x: 456, y: 407, w: 599, h: 192, enabled: false },
-    news: { x: 158, y: 611, w: 443, h: 254, enabled: false },
-    feed: { x: 612, y: 611, w: 443, h: 254, enabled: false },
+    logo: { x: 166, y: 0, w: 868, h: 158, enabled: true },
+    search: { x: 166, y: 158, w: 868, h: 56, enabled: true },
+    weather: { x: 158, y: 230, w: 292, h: 192, enabled: true },
+    clock: { x: 456, y: 230, w: 306, h: 192, enabled: true },
+    shortcuts: { x: 769, y: 230, w: 286, h: 192, enabled: true },
+    date: { x: 158, y: 434, w: 292, h: 62, enabled: false },
+    media: { x: 456, y: 434, w: 599, h: 192, enabled: false },
+    news: { x: 158, y: 638, w: 443, h: 254, enabled: false },
+    feed: { x: 612, y: 638, w: 443, h: 254, enabled: false },
   };
   function homeLayout(value) {
     const free = value?.version === 2;

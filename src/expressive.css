@@ -59,7 +59,7 @@ main:has(#home:not([hidden])) {
 }
 main:has(#home[data-default-layout]:not([data-compact], [hidden]) .home-editor[hidden]) {
   align-content: center;
-  padding-block: 24px 8px;
+  padding-block: 10px 22px;
 }
 main:has(#home:not([hidden]) .home-editor:not([hidden])) { padding-bottom: 12px; }
 main:has(.settings-panel:not([hidden])) { background: var(--floor); }
